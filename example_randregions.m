@@ -70,6 +70,11 @@ figure(2)
 [regROIs, cellROI, regdist] = getRandomROIs(imgs(:,:,end),nreg,regrad,celloutline,actcent,maxdist);
 regcent = reshape([regROIs.Center],2,length(regROIs))';
 %% Get brightness over time for each region
+
+% update region centers and distances in case any got adjusted manually
+regcent = reshape([regROIs.Center],2,length(regROIs))';
+regdist = sqrt(sum((regcent - actcent).^2,2))
+
 regionTraces = getRegionTraces(imgs,regROIs);
 
 %% plot the time traces for a few regions
