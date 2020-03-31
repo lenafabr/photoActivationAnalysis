@@ -11,7 +11,8 @@
 % Modify these parameters for your own file organization
 
 % the directory where images are stored
-dirname = '~/UCSD/data/Avezov/photoactivated_spreading/Edward013020/';
+%dirname = '~/UCSD/data/Avezov/photoactivated_spreading/Edward013020/';
+dirname = '/data/proj/ERtransport/Edward013020/';
 
 % the name of the tif file containing images before photoactivation
 prefile = 'C3-190508_COS7_ATP_depleted_Series12_FRAP4_pre.tif';

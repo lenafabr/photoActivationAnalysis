@@ -11,7 +11,8 @@
 % Modify these parameters for your own file organization
 
 % the directory where images are stored
-dirname = '~/UCSD/data/Avezov/photoactivated_spreading/Edward013020/';
+%dirname = '~/UCSD/data/Avezov/photoactivated_spreading/Edward013020/';
+dirname = '/data/proj/ERtransport/Edward013020/';
 
 % the name of the tif file containing images before photoactivation
 prefile = 'C3-190508_COS7_ATP_depleted_Series12_FRAP4_pre.tif';
@@ -69,10 +70,10 @@ dr = 10; % radial separation between rings. Set to ringwidth to make them non-ov
 nreg = 12; % number of ring regions
 imgsize = [size(imgs,1),size(imgs,2)];
 
-[regMasks] = getRingMasks(nreg,dr,ringwidth,celloutline,actcent,imgsize)
+[regMasks] = getRingMasks(nreg,dr,ringwidth,celloutline,actcent,imgsize);
 
 %% visualize any particular ring region
-rc = 4;
+rc = 5;
 imshowpair(imgs(:,:,end),regMasks(:,:,rc))
 
 %% Get brightness over time for each region
