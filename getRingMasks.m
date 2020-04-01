@@ -1,4 +1,4 @@
-function [regMasks] = getRingMasks(nreg,dr,ringwidth,celloutline,actcent,imgsize)
+function [regMasks,ringrad] = getRingMasks(nreg,dr,ringwidth,celloutline,actcent,imgsize)
 % get ring ROIs in the form of image masks
 % --------
 % input:
@@ -15,9 +15,11 @@ function [regMasks] = getRingMasks(nreg,dr,ringwidth,celloutline,actcent,imgsize
 % -------
 
 cellBW = poly2mask(celloutline(:,1),celloutline(:,2),imgsize(1),imgsize(2));
+ringrad = zeros(nreg,1);
 for rc = 1:nreg    
     outerrad = ringwidth*3/2 + (rc-1)*dr;
-    innerrad = ringwidth/2 + (rc-1)*dr
+    innerrad = ringwidth/2 + (rc-1)*dr;
+    ringrad(rc) = (outerrad + innerrad)/2;
     outerROI = drawcircle(gca,'Center',actcent,'Radius',outerrad,'Visible','off');    
     innerROI = drawcircle(gca,'Center',actcent,'Radius',innerrad,'Visible','off');
     regmask = createMask(outerROI);

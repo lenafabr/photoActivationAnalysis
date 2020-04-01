@@ -17,6 +17,8 @@ end
 % nondimensionalize r and t
 rvals = rin/opt.a;
 tvals = tin*opt.D/opt.a^2;
+a = 1;
+b = opt.b/opt.a;
 
 if (size(tvals,2)>1) 
     error('tin must be a column vector')
@@ -30,12 +32,11 @@ end
 
 
 %% get eigenvalues
-[eiglist,eigfunc] = getEigsCyl(opt.a,opt.b,opt.nmax,[0,1],0.1);
+[eiglist,eigfunc] = getEigsCyl(a,b,opt.nmax,[0,1],0.1);
 eiglist = eiglist(eiglist>1e-8);
 
 
 %% 
-b = opt.b/opt.a;
 
 J0a = besselj(0,eiglist)';
 J1a = besselj(1,eiglist)';
