@@ -24,9 +24,9 @@ for rc = 1:nreg
     innerROI = drawcircle(gca,'Center',actcent,'Radius',innerrad,'Visible','off');
     regmask = createMask(outerROI);
     regmaskinner = createMask(innerROI);
-    if (rc>1)        
+    %if (rc>1)        
         regmask(logical(regmaskinner)) = 0;
-    end
+    %end
     regMasks(:,:,rc) = regmask.*cellBW;    
 end
 
