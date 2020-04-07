@@ -108,7 +108,7 @@ classdef CellObjPA < handle
             % ------------
             % data during photoactivation period
             if (~exist([dirname CL.PAfile],'file'))
-                error(sprintf('Failed to load photoactivated image file: %s', [dirname CL.PAfile]))
+                error('Failed to load photoactivated image file: %s', [dirname CL.PAfile])
             end
             infoPA = imfinfo([dirname CL.PAfile]);
             
@@ -122,7 +122,7 @@ classdef CellObjPA < handle
             
             % data pre-photoactivation
             if (~exist([dirname CL.PAprefile],'file'))
-                error(sprintf('Failed to load pre-photoactivated image file: %s', [dirname CL.PAprefile]))
+                error('Failed to load pre-photoactivated image file: %s', [dirname CL.PAprefile])
             end
             infopre = imfinfo([dirname CL.PAprefile]);
             npreframe = length(infopre);
@@ -139,13 +139,14 @@ classdef CellObjPA < handle
                 data = readtable([dirname metadatafile]);
                 
                 for kc = 1:size(data,1)
-                    if contains(data.Key{kc},'mage|ATLConfocalSettingDefinition|CycleTime')
-                        CL.dt = str2num(data.Value{kc})
+                    if (contains(data.Key{kc},'mage|ATLConfocalSettingDefinition|CycleTime')...
+                            & ~contains(data.Key{kc},'Pre Series'))
+                        CL.dt = str2num(data.Value{kc});
                         break
                     end
                 end
             else
-                warn(sprintf('Failed to load metadata file: %s', [dirname metadatafile]))
+                warning('Failed to load metadata file: %s', [dirname metadatafile])
             end
         end
         
@@ -157,12 +158,15 @@ classdef CellObjPA < handle
             opt = struct();
             
             opt.dodisplay = 0; % display identified region?
+            % how much to dilate to identify connected region
+            opt.dilaterad = 5;
             
             if (exist('options','var'))
                 % copy over passed options
                 opt = copyStruct(options,opt);
             end
            
+            %%
             imPAreg = imread([CL.DirName CL.PAregfile],2);
             
             % Identify centroid and size of photoactivated region
@@ -171,7 +175,20 @@ classdef CellObjPA < handle
             T = graythresh(imPAreg);
             imPAbw = imbinarize(imPAreg,T);
             
-            % get bounding box around PA region
+            % dilate and find connected component to get PA region
+            se = strel('disk',opt.dilaterad);
+            imPAdil = imdilate(imPAbw,se);
+            
+            % get largest connected component
+            CC = bwconncomp(imPAdil);
+            CCsize = cellfun(@(x) length(x), CC.PixelIdxList);
+            [a,b] = max(CCsize);
+            CClargepx = CC.PixelIdxList{b};
+            % and use it to mask out the photoactivated region
+            mask = zeros(size(imPAdil));
+            mask(CClargepx) = 1;
+            imPAbw = imPAbw.*mask;
+            %% get bounding box around PA region
             boxinfo = regionprops(double(imPAbw),'BoundingBox');
             PArect = boxinfo.BoundingBox;
             
@@ -186,13 +203,13 @@ classdef CellObjPA < handle
             
             CL.actROI.bound = [PArect(1),PArect(2); PArect(1)+PArect(3),PArect(2); ...
                 PArect(1)+PArect(3), PArect(2)+PArect(4); PArect(1), PArect(2)+PArect(4)];
-            
+            %%
              if (opt.dodisplay>0)
                 imshow(imPAbw)
                 hold on
                 rectangle('Position',CL.actROI.rect,'Edgecolor','m','LineWidth',2)
                 plot(PAcent(1),PAcent(2),'m*')
-                actroi = drawcircle('Center',CL.actROI.cent,'Radius', CL.actROI.rad,'Color','y')
+                actroi = drawcircle('Center',CL.actROI.cent,'Radius', CL.actROI.rad,'Color','y');
                 CL.actROI.mask = createMask(actroi);
                 hold off
             end
@@ -212,14 +229,15 @@ classdef CellObjPA < handle
             
             imshow(CL.ERimg,[]);
             title(CL.Name)
-            actROI = drawcircle(gca,'Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','y');
+            actroi = drawcircle(gca,'Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','y');
             if (isempty(CL.actROI.mask))
-                CL.actROI.mask = createMask(CL.actROI);
+                CL.actROI.mask = createMask(actroi);
             end
             
+            disp('Click on image to draw polygon outline for overall cell region to analyze. \n Right-click to finish.')
             CL.cellROI.ROI = drawpolygon(gca);
             
-            input('Hit enter when done adjusting\n')
+            input('Drag ROI points to adjust. Hit enter when done adjusting\n')
             
             CL.cellROI.bound = CL.cellROI.ROI.Position;     
             CL.cellROI.mask = createMask(CL.cellROI.ROI);
@@ -230,10 +248,10 @@ classdef CellObjPA < handle
             % if adjust is present and true, allow for adjusting            
             imshow(CL.ERimg,[])
             
-            CL.cellROI.ROI = drawpolygon('Position',CL.cellROI.bound)
-            actROI = drawcircle(gca,'Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','y');
+            CL.cellROI.ROI = drawpolygon('Position',CL.cellROI.bound);
+            actroi = drawcircle(gca,'Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','y');
             if (isempty(CL.actROI.mask))
-                CL.actROI.mask = createMask(CL.actROI);
+                CL.actROI.mask = createMask(actroi);
             end
             
             if (exist('adjust','var'))
