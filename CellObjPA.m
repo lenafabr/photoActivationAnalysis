@@ -20,7 +20,12 @@ classdef CellObjPA < handle
         PAfile = ''; % photoactivated channel filename
         PAprefile = ''; % photoactivated channel before activation
         PAregfile = ''; % photoactivated region during activation
+        % keep track of a second photoactivated signal if needed
+        PA2file = ''; % photoactivated channel filename
+        PA2prefile = ''; % photoactivated channel before activation
+        PA2regfile = ''; % photoactivated region during activation
         ERfile = ''; % constitutive ER marker during activation
+        ERprefile = '';
         
         %time interval (seconds per frame)
         dt = 0;
@@ -55,11 +60,11 @@ classdef CellObjPA < handle
             CL.Name = name;
             
             % set up empty ROIs structure
-            CL.ROIs = struct('bound',{},'mask',{},'rad',{},'cent',{},'avgsignal',{});
+            CL.ROIs = struct('bound',{},'mask',{},'rad',{},'cent',{},'avgsignal',{},'avgsignal2',{});
             
-            CL.actROI = struct('bound',[],'mask',[],'rad',[],'cent',[],'avgsignal',[],'rect',[]);
+            CL.actROI = struct('bound',[],'mask',[],'rad',[],'cent',[],'avgsignal',[],'rect',[],'avgsignal2',[]);
             
-            CL.cellROI = struct('bound',[],'mask',[],'rad',[],'cent',[],'avgsignal',[],'ROI',NaN);
+            CL.cellROI = struct('bound',[],'mask',[],'rad',[],'cent',[],'avgsignal',[],'ROI',NaN,'avgsignal2',[]);
         end
         
         function loadCellData(CL,dirname,PAfile,PAprefile,PAregfile,ERfile,metafile)
@@ -198,7 +203,7 @@ classdef CellObjPA < handle
             
             CL.actROI.rect = PArect;
             CL.actROI.cent = PAcent;            
-            CL.actROI.rad = min([PArect(1)+PArect(3)-PAcent(1), PAcent(1)-PArect(1),...
+            CL.actROI.rad = max([PArect(1)+PArect(3)-PAcent(1), PAcent(1)-PArect(1),...
                 PAcent(2)-PArect(2), PArect(2)+PArect(4)-PAcent(2)]);
             
             CL.actROI.bound = [PArect(1),PArect(2); PArect(1)+PArect(3),PArect(2); ...
@@ -234,7 +239,8 @@ classdef CellObjPA < handle
                 CL.actROI.mask = createMask(actroi);
             end
             
-            disp('Click on image to draw polygon outline for overall cell region to analyze. \n Right-click to finish.')
+            disp(sprintf(...
+                'Click on image to draw polygon outline for overall cell region to analyze. \n Right-click to finish.'))
             CL.cellROI.ROI = drawpolygon(gca);
             
             input('Drag ROI points to adjust. Hit enter when done adjusting\n')
@@ -327,13 +333,30 @@ classdef CellObjPA < handle
             end                        
         end
         
-        function [regionTraces,imgs] = getROItraces(CL)
+        function [regionTraces,imgs] = getROItraces(CL,getnonPATrace)
             % get time-traces for all the cell ROIs
             % reads in all the images but does not save them to cell object
             % to conserve space
+            % getnonPATrace = also keep track of trace in
+            % non-photoactivated signal
+            
+            if (~exist('getnonPATrace'))
+                getnonPATrace = 0;
+            end
+            
+            
+            % get a second photoactivated signal as well.
+            getsignal2 = ~isempty(CL.PA2file); 
             
             % load in all images
             imgs = loadImages(CL.DirName,CL.PAprefile,CL.PAfile);
+            
+            if (getsignal2)
+                imgs2 = loadImages(CL.DirName,CL.PA2prefile,CL.PA2file);
+            end
+            if (getnonPATrace)
+                imgsER = loadImages(CL.DirName,CL.ERprefile,CL.ERfile);
+            end
             
             % put together all region masks
             allmasks = cat(3,CL.ROIs.mask);
@@ -347,6 +370,12 @@ classdef CellObjPA < handle
             
             % reshape each image into a single vector
             imgshape = reshape(imgs,size(imgs,1)*size(imgs,2),size(imgs,3));
+            if (getsignal2)
+                img2shape = reshape(imgs2,size(imgs2,1)*size(imgs2,2),size(imgs2,3));
+            end
+            if (getnonPATrace)
+                imgERshape = reshape(imgsER,size(imgsER,1)*size(imgsER,2),size(imgsER,3));
+            end
             maskshape = reshape(allmasks,size(imgs,1)*size(imgs,2),size(allmasks,3));
             
             % get matrix of total brightness for each region, for each frame
@@ -354,12 +383,34 @@ classdef CellObjPA < handle
             %regrads = [regROIs.Radius]';
             regionTraces = (maskshape'*imgshape)./areas;
             
+            
             nreg = length(CL.ROIs);
             for rc = 1:nreg
                 CL.ROIs(rc).avgsignal = regionTraces(rc,:);
             end
             CL.actROI.avgsignal = regionTraces(nreg+1,:);
             CL.cellROI.avgsignal = regionTraces(nreg+2,:);
+            
+            if (getsignal2)
+                regionTraces2 = (maskshape'*img2shape)./areas;
+                
+                for rc = 1:nreg
+                    CL.ROIs(rc).avgsignal2 = regionTraces2(rc,:);
+                end
+                CL.actROI.avgsignal2 = regionTraces2(nreg+1,:);
+            end
+            
+            if (getnonPATrace)
+                regionTracesER = (maskshape'*imgERshape)./areas;
+                
+                for rc = 1:nreg
+                    CL.ROIs(rc).avgsignalER = regionTracesER(rc,:);
+                end
+                CL.actROI.avgsignalER = regionTracesER(nreg+1,:);
+            end
+            
         end
+                
     end
+    
 end
