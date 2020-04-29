@@ -52,6 +52,10 @@ classdef CellObjPA < handle
         % this has the field ROI for the actual adjustable ROI object
         cellROI = [];
         
+        % ROI for entire cell outline
+        fullcellROI = [];
+        % ROI for nucleus outline
+        nucROI = [];
     end
     
     methods
@@ -165,6 +169,8 @@ classdef CellObjPA < handle
             opt.dodisplay = 0; % display identified region?
             % how much to dilate to identify connected region
             opt.dilaterad = 5;
+            % select activated rectangle manually
+            opt.manualrect = 0;
             
             if (exist('options','var'))
                 % copy over passed options
@@ -175,24 +181,36 @@ classdef CellObjPA < handle
             imPAreg = imread([CL.DirName CL.PAregfile],2);
             
             % Identify centroid and size of photoactivated region
-            
-            %threshold and fill photoactivated region
-            T = graythresh(imPAreg);
-            imPAbw = imbinarize(imPAreg,T);
-            
-            % dilate and find connected component to get PA region
-            se = strel('disk',opt.dilaterad);
-            imPAdil = imdilate(imPAbw,se);
-            
-            % get largest connected component
-            CC = bwconncomp(imPAdil);
-            CCsize = cellfun(@(x) length(x), CC.PixelIdxList);
-            [a,b] = max(CCsize);
-            CClargepx = CC.PixelIdxList{b};
-            % and use it to mask out the photoactivated region
-            mask = zeros(size(imPAdil));
-            mask(CClargepx) = 1;
-            imPAbw = imPAbw.*mask;
+            if (opt.manualrect)
+                imshow(imPAreg,[])
+                disp('Draw rectangle')
+                rect = drawrectangle;
+                input('Hit enter when done adjusting rectangle');
+                mask = createMask(rect);
+                imPAregmask = imPAreg;
+                imPAregmask(~mask(:)) = 0;
+                %threshold and fill photoactivated region
+                T = graythresh(imPAregmask);
+                imPAbw = imbinarize(imPAregmask,T);
+            else % identify activated region automatically
+                %threshold and fill photoactivated region
+                T = graythresh(imPAreg);
+                imPAbw = imbinarize(imPAreg,T);
+                
+                % dilate and find connected component to get PA region
+                se = strel('disk',opt.dilaterad);
+                imPAdil = imdilate(imPAbw,se);
+                
+                % get largest connected component
+                CC = bwconncomp(imPAdil);
+                CCsize = cellfun(@(x) length(x), CC.PixelIdxList);
+                [a,b] = max(CCsize);
+                CClargepx = CC.PixelIdxList{b};
+                % and use it to mask out the photoactivated region
+                mask = zeros(size(imPAdil));
+                mask(CClargepx) = 1;
+                imPAbw = imPAbw.*mask;
+            end
             %% get bounding box around PA region
             boxinfo = regionprops(double(imPAbw),'BoundingBox');
             PArect = boxinfo.BoundingBox;
@@ -270,6 +288,23 @@ classdef CellObjPA < handle
             end
         end
         
+        function showRings(CL,imgscl)
+            % draw the ring regions
+            if (~exist('imgscl'))
+                imgscl = [];
+            end
+            imshow(CL.ERimg,imgscl)
+            
+            drawrectangle('Position',CL.actROI.rect,'Color','m')
+            
+            hold all
+            cmap = jet(length(CL.ROIs));
+            for rc = 1:length(CL.ROIs)
+                 plot(CL.ROIs(rc).bound(:,1),CL.ROIs(rc).bound(:,2),'-','LineWidth',2,'Color',cmap(rc,:))                 
+            end
+            hold off
+        end
+        
         function getRingROIs(CL,nreg,dr,ringwidth,options)
             % get masks for annular ring regions
             % does NOT set ROI boundaries
@@ -282,6 +317,7 @@ classdef CellObjPA < handle
             
             opt.dodisplay = 0; % display ring outer boundaries?
             opt.nth = 30; % how many angular points to define boundaries
+            opt.Rmin = NaN;
             
             if (exist('options','var'))
                 % copy over passed options
@@ -303,10 +339,16 @@ classdef CellObjPA < handle
             
             % first ring starts at approx radius of activated region            
             cent = CL.actROI.cent;
-            thlist = linspace(0,2*pi,opt.nth)';            
+            thlist = linspace(0,2*pi,opt.nth)';        
+            if (isnan(opt.Rmin))
+                rmin = CL.actROI.rad; % start at activated region radius
+            else
+                rmin = opt.Rmin; % start at specified minimum radius
+            end
+            
             for rc = 1:nreg                
-                innerrad = CL.actROI.rad+(rc-1)*dr;
-                outerrad = CL.actROI.rad + (rc-1)*dr+ringwidth;
+                innerrad = rmin+(rc-1)*dr;
+                outerrad = rmin + (rc-1)*dr+ringwidth;
                 CL.ROIs(rc).rad = (outerrad + innerrad)/2;
                 CL.ROIs(rc).cent =cent;
                 outerROI = drawcircle(gca,'Center',cent,'Radius',outerrad,'Visible','off');    
@@ -407,10 +449,11 @@ classdef CellObjPA < handle
                     CL.ROIs(rc).avgsignalER = regionTracesER(rc,:);
                 end
                 CL.actROI.avgsignalER = regionTracesER(nreg+1,:);
+                CL.cellROI.avgsignalER = regionTracesER(nreg+2,:);
             end
             
         end
-                
+                            
     end
     
 end

@@ -1,4 +1,4 @@
-function [regROIs,cellROI,regdist] = getRandomROIs(img,nreg,regrad,celloutline,actcent,maxdist)
+function [regROIs,cellROI,regdist] = getRandomROIs(img,nreg,regrad,celloutline,actcent,maxdist,mindist)
 % generate randomly placed circular ROIs on an image
 % the ROIs will be entirely within the polygon defined by celloutline
 % returns a list of ROI objects whose position can be manually adjusted
@@ -9,6 +9,10 @@ function [regROIs,cellROI,regdist] = getRandomROIs(img,nreg,regrad,celloutline,a
 % regROIs = adjustable ROI objects for the random regions
 % cellROI = adjustable ROI object for the cell
 % regdist = distances of each of the regions from the activation center
+
+if (~exist('mindist'))
+    mindist = 0;
+end
 
 % make mask for the cell ROI
 cellBW = poly2mask(celloutline(:,1),celloutline(:,2),size(img,1),size(img,2));
@@ -28,6 +32,7 @@ dists = sqrt(sum(diffs.^2,2));
 maxR = max(dists);
 % maximum allowed distance from the activated region
 maxR = min([maxdist,maxR]);
+minR = mindist;
 
 % generate random regions within eroded cell mask
 % uses rejected sampling: not particularly efficient but good enough
@@ -36,7 +41,7 @@ while ndone < nreg
     %% generate a bunch of regions
     
     % randomly select center position in circular coords
-    newregdist = sqrt(rand(nreg-ndone,1))*maxR;
+    newregdist = sqrt(rand(nreg-ndone,1)*(maxR^2 - minR^2) + minR^2);
     newregth = rand(nreg-ndone,1)*2*pi;
     newreg = [cos(newregth),sin(newregth)].*newregdist + actcent;
     

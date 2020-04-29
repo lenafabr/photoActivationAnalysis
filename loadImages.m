@@ -1,4 +1,4 @@
-function [imgs,startPA,rawimgs] = loadImages(dirname,prefile,PAfile)
+function [imgs,startPA,rawimgs] = loadImages(dirname,prefile,PAfile,options)
 % load in image series from tif stacks
 % --------
 % Input:
