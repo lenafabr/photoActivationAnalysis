@@ -305,6 +305,176 @@ classdef CellObjPA < handle
             hold off
         end
         
+        function [Rvals,whichrad] = getWedgeROIs(CL,maxR,dR,ringwidth,ntheta,options)
+            % get wedge-shaped ROIs for the cell
+            % store them in CL.ROIs
+            % returns central R values for the rings (in um)
+            % ROIs.whichrad = index into Rvals associated with each wedge
+            % input:
+            % maxR = max ring radius in um
+            % dR = offset between rings in um
+            % ringwidth = width of rings in um
+            % ntheta = number of angular wedges
+            
+            opt = struct();
+            % at least this fraction of the wedge must be in cell area in
+            % order to keep it
+            opt.minarea = 0.8 ;
+                       
+            opt.dodisplay = 0;
+            
+            if (exist('options','var'))
+                opt = copyStruct(options,opt);
+            end
+            
+            thetaall = linspace(0,2*pi,ntheta+1);
+            thetain = thetaall(1:end-1);
+            thetaout = thetaall(2:end);
+            
+            % mask of cell without nucleus
+            nonucmask = CL.fullcellROI.mask & ~CL.nucROI.mask;
+            
+            % activation radius in um
+            actRum = CL.actROI.rad/CL.pxperum;
+            
+            % inner and outer radii
+            Rvalsin = actRum:dR:maxR-dR;
+            Rvals = Rvalsin+ringwidth/2;
+            Rvalsout = Rvalsin+ringwidth;
+            nR = length(Rvalsin);
+            
+            imshow(CL.ERimg,[])
+            
+            %% get angular slice masks
+            slicecoords = zeros(4,2);
+            slicemasks = zeros(size(CL.ERimg,1),size(CL.ERimg,2),length(thetain));
+            for tc = 1:length(thetain)
+                slicecoords(1,:) = CL.fullcellROI.cent;
+                slicecoords(2,:) = CL.fullcellROI.cent+CL.fullcellROI.rad*[cos(thetain(tc)) sin(thetain(tc))];
+                slicecoords(3,:) = CL.fullcellROI.cent+CL.fullcellROI.rad*[cos(thetaout(tc)) sin(thetaout(tc))];
+                slicecoords(4,:) = CL.fullcellROI.cent;
+                
+                sliceroi = drawpolygon('Position',slicecoords,'Visible','off');
+                slicemasks(:,:,tc) = createMask(sliceroi);
+            end
+            
+            %%
+            ct = 0; % count new ROIs
+            clear allROIs
+            if (opt.dodisplay)
+                imshowpair(CL.ERimg,nonucmask)
+                cmap = jet(length(Rvalsin));
+            end
+            for rc = 1:nR
+                %rc
+                outroi = drawcircle('Center',CL.actROI.cent,'Radius',Rvalsout(rc)*CL.pxperum,'Visible','off');
+                inroi = drawcircle('Center',CL.actROI.cent,'Radius',Rvalsin(rc)*CL.pxperum,'Visible','off');
+                 %outroi = drawcircle('Center',CL.actROI.cent,'Radius',Rvalsout(rc),'Visible','off');
+                %inroi = drawcircle('Center',CL.actROI.cent,'Radius',Rvalsin(rc),'Visible','off');
+                
+                outmask = createMask(outroi);
+                inmask = createMask(inroi);
+                
+                ringmask = outmask & ~inmask;
+                
+                for tc = 1:ntheta
+                    % intersect with angular slice
+                    wedgemask = ringmask & slicemasks(:,:,tc);
+                    nw = nnz(wedgemask);
+                    
+                    % intersect with cell region
+                    wedgemask = wedgemask & nonucmask;
+                    %imshowpair(CL.ERimg,wedgemask)
+                    
+                    % only keep if more than 80% within cell region
+                    if nnz(wedgemask) > opt.minarea*nw
+                        wedgemask = wedgemask & nonucmask;
+                        ct = ct+1;
+                        wedgebound = bwboundaries(wedgemask);
+                        wedgebound = fliplr(wedgebound{1});
+                        info = polygeom(wedgebound(:,1),wedgebound(:,2));
+                        newROI = struct('mask',wedgemask,'bound',wedgebound,'cent',info(2:3),'whichrad',rc,'whichth',tc);
+                        whichrad(ct) = rc;
+                        allROIs(ct) = newROI;
+                        
+                        if (opt.dodisplay>1)
+                            drawpolygon('Position',allROIs(ct).bound,'Color',cmap(rc,:));
+                            drawnow
+                        end
+                    end
+                end
+            end
+            CL.ROIs = allROIs;
+        end
+        
+        function getRandomROIsRads(CL,cellmaskB,Rvals,regsize,nregperR,options)
+            % get random ROIs at specified radiuses around the activation center of the
+            % cell
+            % Rvals = radius values
+            % cellmaskB = cell array of boundaries around masked regions of the cell
+            % regsize = size of each region
+            % nregperR = number of regions for each R value
+            % the ROIs are reasonably well but not perfectly spaced out (subsampling without replacement)
+            % and restricted to within the full cell mask minus the nucleus
+            
+            % sample from this many angular points, as a factor of number of regions
+            % desired
+            opt.sampleth = 10;
+            % number of angular values to use in defining ROI boundaries
+            opt.nthregbound = 30;
+            
+            if (exist('options','var'))
+                opt = copyStruct(options,opt);
+            end
+            
+            allth = linspace(0,2*pi,opt.sampleth*nregperR+1)'; % angles to check
+            allth = allth(1:end-1);
+            ct = 0;
+            clear allROIs whichrad
+            
+            imshow(CL.ERimg,[])
+            
+            nR = length(Rvals);
+            
+            for rc = 1:nR
+                % positions along the circle
+                Rpts = Rvals(rc)*CL.pxperum*[cos(allth) sin(allth)] + CL.actROI.cent;
+                
+                % keep only positions within the (possibly disjointed) cell mask
+                incellmask = false(size(Rpts,1),1);
+                for bc = 1:length(cellmaskB)
+                    incellmask = incellmask | inpolygon(Rpts(:,1),Rpts(:,2),cellmaskB{bc}(:,2),cellmaskB{bc}(:,1));
+                end
+                
+                Rpts = Rpts(incellmask,:);
+                
+                % subsample (without replacement) the desired number of points from
+                % within the cell mask at this radius
+                indsamp = randsample(nnz(incellmask),nregperR,false);
+                Rpts = Rpts(indsamp,:);
+                
+                for pc = 1:nregperR
+                    % get ROIs
+                    regroi = drawcircle('Center',Rpts(pc,:),'Radius',regsize*CL.pxperum,'Visible','off');
+                    mask = createMask(regroi);
+                    
+                    newROI = struct('cent',Rpts(pc,:),'rad',regsize*CL.pxperum,'avgsignal',[],'avgsignal2',[],'avgsignalER',[],'whichrad',NaN);
+                    newROI.mask = mask;
+                    
+                    thregbound= linspace(0,2*pi,opt.nthregbound)';
+                    newROI.bound = newROI.rad*[cos(thregbound) sin(thregbound)] + newROI.cent;
+                    
+                    ct = ct+1;
+                    allROIs(ct) = newROI;
+                    % which radius does each ROI belong to
+                    allROIs(ct).whichrad = rc;
+                    
+                    %disp([rc Rvals(rc)*CL.pxperum ct norm(allROIs(ct).cent-CL.actROI.cent)])
+                end
+            end
+            CL.ROIs = allROIs;
+        end
+
         function getRingROIs(CL,nreg,dr,ringwidth,options)
             % get masks for annular ring regions
             % does NOT set ROI boundaries
