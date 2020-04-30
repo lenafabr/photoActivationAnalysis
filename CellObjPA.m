@@ -305,7 +305,7 @@ classdef CellObjPA < handle
             hold off
         end
         
-        function [Rvals,whichrad] = getWedgeROIs(CL,maxR,dR,ringwidth,ntheta,options)
+        function [Rvals,whichrad] = getWedgeROIs(CL,maxR,dR,ringwidth,options)
             % get wedge-shaped ROIs for the cell
             % store them in CL.ROIs
             % returns central R values for the rings (in um)
@@ -313,21 +313,26 @@ classdef CellObjPA < handle
             % input:
             % maxR = max ring radius in um
             % dR = offset between rings in um
-            % ringwidth = width of rings in um
-            % ntheta = number of angular wedges
+            % ringwidth = width of rings in um            
             
             opt = struct();
             % at least this fraction of the wedge must be in cell area in
             % order to keep it
-            opt.minarea = 0.8 ;
-                       
+            opt.minarea = 0.8 ;        
+            opt.ntheta = 30; % default number of angular slices
+            % optionally, make slices of constant arc length, potentially
+            % overlapping
+            opt.arclen = NaN;
+            % if set, offset all slices by this arc length, regardless of
+            % ntheta
+            opt.arcshift = NaN;
             opt.dodisplay = 0;
             
             if (exist('options','var'))
                 opt = copyStruct(options,opt);
             end
             
-            thetaall = linspace(0,2*pi,ntheta+1);
+            thetaall = linspace(0,2*pi,opt.ntheta+1);
             thetain = thetaall(1:end-1);
             thetaout = thetaall(2:end);
             
@@ -346,16 +351,18 @@ classdef CellObjPA < handle
             imshow(CL.ERimg,[])
             
             %% get angular slice masks
-            slicecoords = zeros(4,2);
-            slicemasks = zeros(size(CL.ERimg,1),size(CL.ERimg,2),length(thetain));
-            for tc = 1:length(thetain)
-                slicecoords(1,:) = CL.fullcellROI.cent;
-                slicecoords(2,:) = CL.fullcellROI.cent+CL.fullcellROI.rad*[cos(thetain(tc)) sin(thetain(tc))];
-                slicecoords(3,:) = CL.fullcellROI.cent+CL.fullcellROI.rad*[cos(thetaout(tc)) sin(thetaout(tc))];
-                slicecoords(4,:) = CL.fullcellROI.cent;
-                
-                sliceroi = drawpolygon('Position',slicecoords,'Visible','off');
-                slicemasks(:,:,tc) = createMask(sliceroi);
+            if (isnan(opt.arclen))
+                slicecoords = zeros(4,2);
+                slicemasks = zeros(size(CL.ERimg,1),size(CL.ERimg,2),length(thetain));
+                for tc = 1:length(thetain)
+                    slicecoords(1,:) = CL.fullcellROI.cent;
+                    slicecoords(2,:) = CL.fullcellROI.cent+CL.fullcellROI.rad*[cos(thetain(tc)) sin(thetain(tc))];
+                    slicecoords(3,:) = CL.fullcellROI.cent+CL.fullcellROI.rad*[cos(thetaout(tc)) sin(thetaout(tc))];
+                    slicecoords(4,:) = CL.fullcellROI.cent;
+                    
+                    sliceroi = drawpolygon('Position',slicecoords,'Visible','off');
+                    slicemasks(:,:,tc) = createMask(sliceroi);
+                end
             end
             
             %%
@@ -377,7 +384,36 @@ classdef CellObjPA < handle
                 
                 ringmask = outmask & ~inmask;
                 
-                for tc = 1:ntheta
+                if (~isnan(opt.arclen))
+                    % get slices of a fixed arc length
+                    totarc = 2*pi*Rvals(rc);
+                    
+                    if (~isnan(opt.arcshift))
+                        % shift wedges by this arc length
+                        arcstart = 0:opt.arcshift:totarc-opt.arclen/2;
+                    else
+                        % fixed total number of wedges
+                        arcstart = linspace(0,totarc-opt.arclen/2,opt.ntheta);
+                    end
+                    
+                    arcend = arcstart+opt.arclen;
+                    thetain = arcstart/Rvals(rc);
+                    thetaout = arcend/Rvals(rc);
+                    
+                    slicecoords = zeros(4,2);
+                    slicemasks = zeros(size(CL.ERimg,1),size(CL.ERimg,2),length(thetain));
+                    for tc = 1:length(thetain)
+                        slicecoords(1,:) = CL.fullcellROI.cent;
+                        slicecoords(2,:) = CL.fullcellROI.cent+CL.fullcellROI.rad*[cos(thetain(tc)) sin(thetain(tc))];
+                        slicecoords(3,:) = CL.fullcellROI.cent+CL.fullcellROI.rad*[cos(thetaout(tc)) sin(thetaout(tc))];
+                        slicecoords(4,:) = CL.fullcellROI.cent;
+                        
+                        sliceroi = drawpolygon('Position',slicecoords,'Visible','off');
+                        slicemasks(:,:,tc) = createMask(sliceroi);
+                    end
+                end
+                
+                for tc = 1:length(thetain)
                     % intersect with angular slice
                     wedgemask = ringmask & slicemasks(:,:,tc);
                     nw = nnz(wedgemask);
