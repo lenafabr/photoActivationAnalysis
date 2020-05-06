@@ -320,12 +320,18 @@ classdef CellObjPA < handle
             % order to keep it
             opt.minarea = 0.8 ;        
             opt.ntheta = 30; % default number of angular slices
+            % set min radius value in um; if not provided, use the
+            % activation radius
+            opt.minR = NaN; 
             % optionally, make slices of constant arc length, potentially
             % overlapping
             opt.arclen = NaN;
             % if set, offset all slices by this arc length, regardless of
             % ntheta
             opt.arcshift = NaN;
+            % include ring ROIs as well
+            opt.getRingROIs = false;
+            
             opt.dodisplay = 0;
             
             if (exist('options','var'))
@@ -340,7 +346,11 @@ classdef CellObjPA < handle
             nonucmask = CL.fullcellROI.mask & ~CL.nucROI.mask;
             
             % activation radius in um
-            actRum = CL.actROI.rad/CL.pxperum;
+            if (isnan(opt.minR))
+                actRum = CL.actROI.rad/CL.pxperum;
+            else
+                actRum = opt.minR;
+            end
             
             % inner and outer radii
             Rvalsin = actRum:dR:maxR-dR;
@@ -372,6 +382,8 @@ classdef CellObjPA < handle
                 imshowpair(CL.ERimg,nonucmask)
                 cmap = jet(length(Rvalsin));
             end
+            
+            ringROIs = struct('cent',{},'rad',{},'mask',{},'type',{},'whichrad',{},'whichth',{},'bound',{});
             for rc = 1:nR
                 %rc
                 outroi = drawcircle('Center',CL.actROI.cent,'Radius',Rvalsout(rc)*CL.pxperum,'Visible','off');
@@ -383,6 +395,15 @@ classdef CellObjPA < handle
                 inmask = createMask(inroi);
                 
                 ringmask = outmask & ~inmask;
+                
+                if (opt.getRingROIs)
+                    % save the ring regions as well
+                    ringmask2 = ringmask & nonucmask;
+                    ringbounds = bwboundaries(ringmask);
+                    ringROIs(rc) = struct('cent',CL.actROI.cent,'rad',Rvals(rc)*CL.pxperum,'mask',ringmask2,...
+                        'type','ring','whichrad',rc,'bound',NaN,'whichth',NaN);                      
+                    ringROIs(rc).bound = ringbounds;
+                end
                 
                 if (~isnan(opt.arclen))
                     % get slices of a fixed arc length
@@ -429,7 +450,8 @@ classdef CellObjPA < handle
                         wedgebound = bwboundaries(wedgemask);
                         wedgebound = fliplr(wedgebound{1});
                         info = polygeom(wedgebound(:,1),wedgebound(:,2));
-                        newROI = struct('mask',wedgemask,'bound',wedgebound,'cent',info(2:3),'whichrad',rc,'whichth',tc);
+                        newROI = struct('mask',wedgemask,'bound',wedgebound,'cent',info(2:3),'rad',Rvals(rc)*CL.pxperum,...
+                            'whichrad',rc,'whichth',tc,'type','wedge');
                         whichrad(ct) = rc;
                         allROIs(ct) = newROI;
                         
@@ -440,7 +462,12 @@ classdef CellObjPA < handle
                     end
                 end
             end
-            CL.ROIs = allROIs;
+            if (opt.getRingROIs)
+                % include ring regions
+                CL.ROIs = [allROIs ringROIs];
+            else
+                CL.ROIs = allROIs;
+            end
         end
         
         function getRandomROIsRads(CL,cellmaskB,Rvals,regsize,nregperR,options)
@@ -612,9 +639,10 @@ classdef CellObjPA < handle
             % add on activation mask and whole cell mask
             allmasks(:,:,end+1) = CL.actROI.mask;
             allmasks(:,:,end+1) = CL.cellROI.mask;
-            
-            % area in each mask (in px^2)
-            areas = squeeze(sum(sum(allmasks,1),2));
+             allmasks(:,:,end+1) = CL.fullcellROI.mask;
+             
+            % area in each mask (in um^2)
+            areas = squeeze(sum(sum(allmasks,1),2))/CL.pxperum^2;
             
             % reshape each image into a single vector
             imgshape = reshape(imgs,size(imgs,1)*size(imgs,2),size(imgs,3));
@@ -638,6 +666,7 @@ classdef CellObjPA < handle
             end
             CL.actROI.avgsignal = regionTraces(nreg+1,:);
             CL.cellROI.avgsignal = regionTraces(nreg+2,:);
+            CL.fullcellROI.avgsignal = regionTraces(nreg+3,:);
             
             if (getsignal2)
                 regionTraces2 = (maskshape'*img2shape)./areas;
@@ -656,6 +685,7 @@ classdef CellObjPA < handle
                 end
                 CL.actROI.avgsignalER = regionTracesER(nreg+1,:);
                 CL.cellROI.avgsignalER = regionTracesER(nreg+2,:);
+                CL.fullcellROI.avgsignalER = regionTracesER(nreg+3,:);
             end
             
         end
