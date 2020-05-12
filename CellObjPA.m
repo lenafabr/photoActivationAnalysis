@@ -141,15 +141,21 @@ classdef CellObjPA < handle
             
             % -------
             %% load in frame rate from metadata
-            % WARNING: assumes same frame rate for both pre and during
+            % WARNING: only loads frame rate for during the
             % photoactivation period
             % -------
+            
+            % get FRAP number from cell name
+            numstr = regexp(CL.Name,'FRAP([0-9]+)','tokens');
+            frapnum = sprintf('FRAP %s',numstr{1}{1});
+            
+            
             if (exist([dirname metadatafile],'file'))
                 data = readtable([dirname metadatafile]);
                 
                 for kc = 1:size(data,1)
                     if (contains(data.Key{kc},'mage|ATLConfocalSettingDefinition|CycleTime')...
-                            & ~contains(data.Key{kc},'Pre Series'))
+                            && ~contains(data.Key{kc},'Pre Series') && contains(data.Key{kc},frapnum))
                         CL.dt = str2num(data.Value{kc});
                         break
                     end
@@ -220,8 +226,9 @@ classdef CellObjPA < handle
             PAcent = centinfo.WeightedCentroid;                       
             
             CL.actROI.rect = PArect;
-            CL.actROI.cent = PAcent;            
-            CL.actROI.rad = max([PArect(1)+PArect(3)-PAcent(1), PAcent(1)-PArect(1),...
+            CL.actROI.cent = PAcent;    
+                                    
+            CL.actROI.rad = min([PArect(1)+PArect(3)-PAcent(1), PAcent(1)-PArect(1),...
                 PAcent(2)-PArect(2), PArect(2)+PArect(4)-PAcent(2)]);
             
             CL.actROI.bound = [PArect(1),PArect(2); PArect(1)+PArect(3),PArect(2); ...
@@ -265,6 +272,41 @@ classdef CellObjPA < handle
             
             CL.cellROI.bound = CL.cellROI.ROI.Position;     
             CL.cellROI.mask = createMask(CL.cellROI.ROI);
+        end        
+        
+        function setCellNucROI(CL)
+            % manually set the region corresponding to the full cell and
+            % the nucleus (each a continuous polygon containing activation
+            % circle)            
+            % hit enter for each when done
+            
+            if (isnan(CL.ERimg))
+                 % load ER image
+                CL.ERimg = imread([CL.DirName,CL.ERfile],1);
+            end      
+            
+            imshow(CL.ERimg,[]);
+            title(CL.Name)
+            actroi = drawcircle(gca,'Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','y');
+            if (isempty(CL.actROI.mask))
+                CL.actROI.mask = createMask(actroi);
+            end
+            
+            % full cell outline
+            disp(sprintf(...
+                'Click on image to draw polygon outline for full cell. \n Right-click to finish.'))
+            ROI = drawpolygon(gca);            
+            input('Drag ROI points to adjust. Hit enter when done adjusting\n')
+            
+            CL.fullcellROI = processPolygonROI(ROI);                                      
+            
+            % nucleus outline
+             disp(sprintf(...
+                'Click on image to draw polygon outline for nucleus. \n Right-click to finish.'))
+            ROI = drawpolygon(gca);            
+            input('Drag ROI points to adjust. Hit enter when done adjusting\n')
+            
+            CL.nucROI = processPolygonROI(ROI);            
         end        
         
         function showCellROI(CL,adjust)            
@@ -361,16 +403,20 @@ classdef CellObjPA < handle
             imshow(CL.ERimg,[])
             
             %% get angular slice masks
+            actcent = CL.actROI.cent;
+            dists = CL.fullcellROI.bound - actcent;
+            dists = sqrt(sum(dists.^2,2));
+            cellrad = max(dists);
             if (isnan(opt.arclen))
                 slicecoords = zeros(4,2);
                 slicemasks = zeros(size(CL.ERimg,1),size(CL.ERimg,2),length(thetain));
                 for tc = 1:length(thetain)
-                    slicecoords(1,:) = CL.fullcellROI.cent;
-                    slicecoords(2,:) = CL.fullcellROI.cent+CL.fullcellROI.rad*[cos(thetain(tc)) sin(thetain(tc))];
-                    slicecoords(3,:) = CL.fullcellROI.cent+CL.fullcellROI.rad*[cos(thetaout(tc)) sin(thetaout(tc))];
-                    slicecoords(4,:) = CL.fullcellROI.cent;
+                    slicecoords(1,:) = actcent;
+                    slicecoords(2,:) = actcent+cellrad*[cos(thetain(tc)) sin(thetain(tc))];
+                    slicecoords(3,:) = actcent+cellrad*[cos(thetaout(tc)) sin(thetaout(tc))];
+                    slicecoords(4,:) = actcent;
                     
-                    sliceroi = drawpolygon('Position',slicecoords,'Visible','off');
+                    sliceroi = drawpolygon('Position',slicecoords,'Visible','on');
                     slicemasks(:,:,tc) = createMask(sliceroi);
                 end
             end
@@ -422,12 +468,12 @@ classdef CellObjPA < handle
                     thetaout = arcend/Rvals(rc);
                     
                     slicecoords = zeros(4,2);
-                    slicemasks = zeros(size(CL.ERimg,1),size(CL.ERimg,2),length(thetain));
+                    slicemasks = zeros(size(CL.ERimg,1),size(CL.ERimg,2),length(thetain));                   
                     for tc = 1:length(thetain)
-                        slicecoords(1,:) = CL.fullcellROI.cent;
-                        slicecoords(2,:) = CL.fullcellROI.cent+CL.fullcellROI.rad*[cos(thetain(tc)) sin(thetain(tc))];
-                        slicecoords(3,:) = CL.fullcellROI.cent+CL.fullcellROI.rad*[cos(thetaout(tc)) sin(thetaout(tc))];
-                        slicecoords(4,:) = CL.fullcellROI.cent;
+                        slicecoords(1,:) = actcent;
+                        slicecoords(2,:) = actcent+cellrad*[cos(thetain(tc)) sin(thetain(tc))];
+                        slicecoords(3,:) = actcent+cellrad*[cos(thetaout(tc)) sin(thetaout(tc))];
+                        slicecoords(4,:) = actcent;
                         
                         sliceroi = drawpolygon('Position',slicecoords,'Visible','off');
                         slicemasks(:,:,tc) = createMask(sliceroi);
@@ -689,7 +735,19 @@ classdef CellObjPA < handle
             end
             
         end
-                            
+        
+        function newROI = adjustROI(CL,ROIstruct)
+            % adjust an ROI info structure, defined by a polygonal boundary
+            
+            imshow(CL.ERimg,[])
+            
+            roiobj = drawpolygon('Position',ROIstruct.bound);
+            
+            input('Hit enter when done adjusting region');
+            
+            newROI = processPolygonROI(roiobj);
+        end
     end
+    
     
 end
