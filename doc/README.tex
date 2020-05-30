@@ -1,0 +1,98 @@
+\documentclass[12pt]{article}
+\usepackage{url,setspace,amsmath}
+\usepackage{graphicx,xcolor}
+\setlength{\oddsidemargin}{-8mm}
+\setlength{\evensidemargin}{0mm}
+\setlength{\textwidth}{175mm}
+%\setlength{\topmargin}{-5mm}
+%\setlength{\textheight}{240mm}
+%\setlength{\headheight}{0cm}
+\setstretch{1}
+
+\begin{document}
+\title{\vspace{-2cm}Documentation for photoActivationAnalysis: tracking spatiotemporal evolution of photoactivated proteins in the ER}
+\author{E.~F.~Koslover}
+\date{Last updated \today}
+\maketitle
+
+The code in this package runs on Matlab and is used to analyze signal traces at different positions around a photoactivated region. 
+
+%\tableofcontents
+%\newpage
+
+\section{Requirements}
+\begin{itemize}
+	\item Matlab software and image processing toolbox. The code has been tested on Matlab R2018b.
+	\item Image stacks. Each stack should be a separate (single-channel) .tif file. Currently the code assumes that for each image movie you have:
+	\begin{itemize}
+		\item One stack containing frames prior to activation, with photoactivated signal channel.
+		\item One stack containing frames during activation, with photoactivated signal channel.
+		\item One stack containing frames prior to activation, with constitutive ER marker.
+		\item One stack containing frames during activation, with constitutive ER marker
+		\item One stack containing frames during activation, showing the photoactivated region only.
+	\end{itemize}
+\end{itemize}
+
+\section{Workflow}
+\begin{enumerate}
+	\item Load a .lif file in Fiji (ImageJ). Select all "pre" and "bleach" series of interest. Select "split channels" and "Display metadata"
+	\item Save all loaded channels to individual .tif files. Also save the metadata as a .csv
+	\item Process the resulting images to load general information about the cell, set up ROIs etc. (Section ~\ref{sec:processcells}). Save to .mat files.
+	\item Fit a single exponential rise to each wedge-shaped ROI. Average all ROIs a certain distance away from the center of the activated region. {\color{red} If starting from preloaded data \url=allcells_*.mat=}, just do this step.
+	\end{enumerate}
+	
+\section{Processing images to make cell objects}
+\label{sec:processcells}
+	\begin{enumerate}
+		\item Open processManyCells.m and step through it in Matlab's cell mode (hit ctrl-enter to run each chunk of code).		
+		\item You will need to modify directory and file names to match your system. 
+		\item The activation region is detected automatically (only one region is detected in a movie). If a movie has more than one cell to be analyzed, you will need to run it through multiple times and set the "manualrect" flag to 1 to pick the activation region manually.
+		
+		\centerline{\includegraphics[width=0.4\textwidth]{activationregion.png}}
+		
+		\item You will need to manually select the outline of each cell and its nucleus.  Click on the image to select a polygonal region, then drag the control points to adjust, then hit enter when done.
+		
+		\centerline{\includegraphics[width=0.4\textwidth]{celloutline.png}}
+		
+		\item The code will automatically pick out wedge and ring regions. Look through the comments for parameters to alter (eg: how wide to make the rings and wedges).
+		
+		\centerline{\includegraphics[width=0.4\textwidth]{wedgeregions.png}}
+		
+		\item The code then calculates the signal (per px) over time in each wedge and ring ROI and saves the result in CL.ROIs.avgsignal. 
+		
+		\item To visualize ({\em eg}) the first ten ROIs and their signals do:
+		\begin{verbatim}
+		CL.showROI(1:10)
+		\end{verbatim}
+		
+		\centerline{\includegraphics[width=\textwidth]{traces.png}}
+		
+		\item The cell object is saved to a .mat file. Only one image is included (CL.ERimg) to allow the cell to be visualized while keeping file size small.		
+	\end{enumerate}	
+	
+\section{Get average half-time for all regions at the same radius}
+
+\begin{enumerate}
+	\item Load previously processed cell objects (with all regions defined).
+	\begin{itemize}
+		\item .mat files provided: \url=allcells_ctrl.mat= has control cells and \url=allcells_RTN4OE.mat= has Rtn4a overexpression cells. These were obtained as described in Section ~\ref{sec:processcells}.
+	\end{itemize}
+	\item Open the file \url=exploreHalfTimes.m= and step through the sections of code. 
+	\item Important parameter: 'maxtscl'. All regions where the fitted half-time is above this factor times the length of the movie are excluded from the average.	
+\end{enumerate}
+
+\centerline{\includegraphics[width=\textwidth]{expfit.png}}
+
+\begin{minipage}{0.5\textwidth}
+\centerline{\includegraphics[width=0.9\textwidth]{avghalftimes}}
+\end{minipage}
+\begin{minipage}{0.5\textwidth}
+\centerline{\includegraphics[width=0.9\textwidth]{avghalftimes_loglog}}
+\end{minipage}
+
+
+
+%\bibliographystyle{aip} 
+%\bibliography{fiberModel}
+
+\end{document}

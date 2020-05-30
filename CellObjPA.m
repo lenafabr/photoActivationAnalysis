@@ -56,6 +56,9 @@ classdef CellObjPA < handle
         fullcellROI = [];
         % ROI for nucleus outline
         nucROI = [];
+        
+        % function used for fitting signals vs time
+        fitfunc = NaN;
     end
     
     methods
@@ -163,6 +166,9 @@ classdef CellObjPA < handle
             else
                 warning('Failed to load metadata file: %s', [dirname metadatafile])
             end
+            
+            %% load in one frame to be able to quickly visualize the cell
+            CL.ERimg = imread([CL.DirName,CL.ERfile],1);
         end
         
         function getActROI(CL,options)
@@ -235,10 +241,11 @@ classdef CellObjPA < handle
                 PArect(1)+PArect(3), PArect(2)+PArect(4); PArect(1), PArect(2)+PArect(4)];
             %%
              if (opt.dodisplay>0)
-                imshow(imPAbw)
+                %imshow(imPAbw)
+                imshowpair(CL.ERimg,imPAreg)
                 hold on
-                rectangle('Position',CL.actROI.rect,'Edgecolor','m','LineWidth',2)
-                plot(PAcent(1),PAcent(2),'m*')
+                rectangle('Position',CL.actROI.rect,'Edgecolor','c','LineWidth',2)
+                plot(PAcent(1),PAcent(2),'c*')
                 actroi = drawcircle('Center',CL.actROI.cent,'Radius', CL.actROI.rad,'Color','y');
                 CL.actROI.mask = createMask(actroi);
                 hold off
@@ -303,7 +310,7 @@ classdef CellObjPA < handle
             % nucleus outline
              disp(sprintf(...
                 'Click on image to draw polygon outline for nucleus. \n Right-click to finish.'))
-            ROI = drawpolygon(gca);            
+            ROI = drawpolygon(gca,'Color','g');            
             input('Drag ROI points to adjust. Hit enter when done adjusting\n')
             
             CL.nucROI = processPolygonROI(ROI);            
@@ -427,6 +434,7 @@ classdef CellObjPA < handle
             if (opt.dodisplay)
                 imshowpair(CL.ERimg,nonucmask)
                 cmap = jet(length(Rvalsin));
+                drawcircle('Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','w')
             end
             
             ringROIs = struct('cent',{},'rad',{},'mask',{},'type',{},'whichrad',{},'whichth',{},'bound',{});
@@ -445,7 +453,11 @@ classdef CellObjPA < handle
                 if (opt.getRingROIs)
                     % save the ring regions as well
                     ringmask2 = ringmask & nonucmask;
-                    ringbounds = bwboundaries(ringmask);
+                    ringbounds = bwboundaries(ringmask2);
+                    for bc = 1:length(ringbounds)
+                        ringbounds{bc} = fliplr(ringbounds{bc});
+                    end
+                    
                     ringROIs(rc) = struct('cent',CL.actROI.cent,'rad',Rvals(rc)*CL.pxperum,'mask',ringmask2,...
                         'type','ring','whichrad',rc,'bound',NaN,'whichth',NaN);                      
                     ringROIs(rc).bound = ringbounds;
@@ -502,11 +514,15 @@ classdef CellObjPA < handle
                         allROIs(ct) = newROI;
                         
                         if (opt.dodisplay>1)
-                            drawpolygon('Position',allROIs(ct).bound,'Color',cmap(rc,:));
+                            %drawpolygon('Position',allROIs(ct).bound,'Color',cmap(rc,:));
+                            bound = allROIs(ct).bound;
+                            hold all
+                            plot(bound(:,1),bound(:,2),'LineWidth',2,'Color',cmap(rc,:))
                             drawnow
                         end
                     end
                 end
+                if (opt.dodisplay>1); hold off; end
             end
             if (opt.getRingROIs)
                 % include ring regions
@@ -736,6 +752,44 @@ classdef CellObjPA < handle
             
         end
         
+        function showROI(CL,ind)
+            % display a specific set of ROIs
+            if (isfield(CL.ROIs,'avgsignal')); subplot(1,2,1); end
+            imshow(CL.ERimg,[])
+            
+            hold all  
+            cmat = jet(length(ind));       
+            
+            for rc = 1:length(ind)
+                ROI = CL.ROIs(ind(rc));                
+                bounds = ROI.bound;
+                if (iscell(bounds)) % multiple boundaries around this region
+                    for bc = 1:length(bounds)
+                        bound = bounds{bc};
+                        plot(bound(:,1),bound(:,2),'Color',cmat(rc,:),'LineWidth',2)
+                    end
+                else
+                    plot(bounds(:,1),bounds(:,2),'Color',cmat(rc,:),'LineWidth',2)
+                end
+            end
+            hold off
+            title(sprintf('%s',CL.Name),'Interpreter','none')
+            
+            if (isfield(CL.ROIs,'avgsignal'))
+                % plot avg signal if available
+                subplot(1,2,2)
+                tvals = (1:CL.NFrame)*CL.dt;
+                for rc = 1:length(ind)
+                    signal = CL.ROIs(ind(rc)).avgsignal;
+                    plot(tvals,signal,'Color',cmat(rc,:))
+                    hold all
+                end
+                hold off
+                xlabel('time (s)')
+                ylabel('signal')
+            end
+        end
+        
         function newROI = adjustROI(CL,ROIstruct)
             % adjust an ROI info structure, defined by a polygonal boundary
             
@@ -747,7 +801,56 @@ classdef CellObjPA < handle
             
             newROI = processPolygonROI(roiobj);
         end
+        
+        function roiinds = ROIsByPoint(CL,pt)
+            % find all ROIs containing a given point
+            % rounds point to nearest pixel and uses ROI masks
+            ptround = round(pt);
+            roiinds = [];
+            for rc = 1:length(CL.ROIs)
+                if CL.ROIs(rc).mask(ptround(2),ptround(1))
+                    roiinds(end+1) = rc;
+                end
+            end
+        end
+        function closewedge = closestROICent(CL,pt)
+            % find the ROI whose center is closest to the desired point
+            
+            wedgedist = cat(1,CL.ROIs.cent) - pt;
+            wedgedist = sqrt(sum(wedgedist.^2,2))
+            [~,closewedge] = min(wedgedist);            
+        end
+        
+        function [halftimes,allcfit,fitfunc] = getHalfTimes(CL)
+            % calculate half-times, from single exponential fit for all ROI regions
+            % in this cell
+            % saves output in CL.ROIs.halftime                        
+            
+            tvals = (1:CL.NFrame)*CL.dt;
+            tfit = tvals(CL.startPA+1:end);
+            timeshift = tvals(CL.startPA);
+            fitfunc = @(c,t) c(1)*(1-exp(-(t-timeshift)/c(2)))+c(3);
+            
+            CL.fitfunc = fitfunc;
+            for rc = 1:length(CL.ROIs)
+                ROI = CL.ROIs(rc);
+                               
+                signal = CL.ROIs(rc).avgsignal;
+                
+                yshift = mean(signal(1:CL.startPA));                
+                cguess = [max(signal),10,yshift];
+                lb = [0 0 0]; ub = [inf inf inf];
+                
+                options=optimset('Display','none');            
+                [cfit, resnorm] = lsqcurvefit(fitfunc,cguess,tfit,signal(CL.startPA+1:end),lb,ub,options);
+                allcfit(rc,:) = cfit;   
+                
+                halftimes(rc) = log(2)*cfit(2);
+                CL.ROIs(rc).halftime = halftimes(rc);
+                CL.ROIs(rc).cfit = cfit;                
+            end
+            
+        end
     end
-    
-    
+
 end
