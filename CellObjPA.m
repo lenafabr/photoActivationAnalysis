@@ -670,7 +670,7 @@ classdef CellObjPA < handle
             end                        
         end
         
-        function [regionTraces,imgs] = getROItraces(CL,getnonPATrace)
+        function [regionTraces,imgs] = getROItraces(CL,getnonPATrace,loadoptions)
             % get time-traces for all the cell ROIs
             % reads in all the images but does not save them to cell object
             % to conserve space
@@ -678,7 +678,10 @@ classdef CellObjPA < handle
             % non-photoactivated signal
             
             if (~exist('getnonPATrace'))
-                getnonPATrace = 0;
+                getnonPATrace = 0;                
+            end
+            if (~exist('loadoptions'))
+                loadoptions = struct();
             end
             
             
@@ -686,13 +689,13 @@ classdef CellObjPA < handle
             getsignal2 = ~isempty(CL.PA2file); 
             
             % load in all images
-            imgs = loadImages(CL.DirName,CL.PAprefile,CL.PAfile);
+            imgs = loadImages(CL.DirName,CL.PAprefile,CL.PAfile,loadoptions);
             
             if (getsignal2)
-                imgs2 = loadImages(CL.DirName,CL.PA2prefile,CL.PA2file);
+                imgs2 = loadImages(CL.DirName,CL.PA2prefile,CL.PA2file,loadoptions);
             end
             if (getnonPATrace)
-                imgsER = loadImages(CL.DirName,CL.ERprefile,CL.ERfile);
+                imgsER = loadImages(CL.DirName,CL.ERprefile,CL.ERfile,loadoptions);
             end
             
             % put together all region masks

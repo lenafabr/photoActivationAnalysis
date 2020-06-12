@@ -87,7 +87,7 @@ imgs = rawimgs;
 nimg = size(imgs,3);
 for fc = 1:nimg
     % denoise with a median filter over 3 pixels (default)
-    if (opt.denoise == 'median')
+    if (strcmp(opt.denoise,'median'))
         imgs(:,:,fc) = medfilt2(rawimgs(:,:,fc),[opt.medpx opt.medpx]);
     elseif (~isempty(opt.denoise))
         error(sprintf('Currently the only denoising filters set up are median or nothing. You passed opt.denoise = %s', opt.denoise))
