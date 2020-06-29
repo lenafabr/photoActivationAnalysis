@@ -824,23 +824,36 @@ classdef CellObjPA < handle
             [~,closewedge] = min(wedgedist);            
         end
         
-        function [halftimes,allcfit,fitfunc] = getHalfTimes(CL)
+        function [halftimes,allcfit,fitfunc] = getHalfTimes(CL,maxframe)
             % calculate half-times, from single exponential fit for all ROI regions
             % in this cell
             % saves output in CL.ROIs.halftime                        
             
-            tvals = (1:CL.NFrame)*CL.dt;
+            % optionally, limit the maximal frame used for the fitting
+            if (~exist('maxframe','var'))
+                maxframe = CL.NFrame;
+            end
+            
+            tvals = (1:maxframe)*CL.dt;
             tfit = tvals(CL.startPA+1:end);
-            timeshift = tvals(CL.startPA);
+            if (CL.startPA == 0)
+                timeshift = 0;
+            else
+                timeshift = tvals(CL.startPA);
+            end
             fitfunc = @(c,t) c(1)*(1-exp(-(t-timeshift)/c(2)))+c(3);
             
             CL.fitfunc = fitfunc;
             for rc = 1:length(CL.ROIs)
                 ROI = CL.ROIs(rc);
                                
-                signal = CL.ROIs(rc).avgsignal;
+                signal = CL.ROIs(rc).avgsignal(1:maxframe);
                 
-                yshift = mean(signal(1:CL.startPA));                
+                if (CL.startPA ==0)
+                    yshift = 0;
+                else
+                    yshift = mean(signal(1:CL.startPA));                
+                end
                 cguess = [max(signal),10,yshift];
                 lb = [0 0 0]; ub = [inf inf inf];
                 
