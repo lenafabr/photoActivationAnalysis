@@ -59,6 +59,9 @@ classdef CellObjPA < handle
         
         % function used for fitting signals vs time
         fitfunc = NaN;
+        
+        % save images if desired
+        imgs = [];
     end
     
     methods
@@ -184,13 +187,27 @@ classdef CellObjPA < handle
             % select activated rectangle manually
             opt.manualrect = 0;
             
+            % the options below are mostly used to deal with simulated data
+            % treated as image
+            
+            % input image rather than reading from file
+            opt.imPAreg = NaN;            
+            % apply median filter of some size before binarizing           
+            opt.medfilter = NaN;
+            % use a percentile cutoff for thresholding
+            opt.threshprctile = NaN;
+            
             if (exist('options','var'))
                 % copy over passed options
                 opt = copyStruct(options,opt);
             end
            
             %%
-            imPAreg = imread([CL.DirName CL.PAregfile],2);
+            if (isnan(opt.imPAreg))
+                imPAreg = imread([CL.DirName CL.PAregfile],2);
+            else
+                imPAreg = opt.imPAreg;
+            end
             
             % Identify centroid and size of photoactivated region
             if (opt.manualrect)
@@ -205,19 +222,29 @@ classdef CellObjPA < handle
                 T = graythresh(imPAregmask);
                 imPAbw = imbinarize(imPAregmask,T);
             else % identify activated region automatically
-                %threshold and fill photoactivated region
-                T = graythresh(imPAreg);
-                imPAbw = imbinarize(imPAreg,T);
+                % median filter
+                if (~isnan(opt.medfilter))
+                    imPAreg = medfilt2(imPAreg,[opt.medfilter,opt.medfilter]);
+                end
                 
-                % dilate and find connected component to get PA region
+                %threshold and fill photoactivated region
+                if (opt.threshprctile==NaN)
+                    T = graythresh(imPAreg); % use otsu thresholding
+                else
+                    % threshold to some percentile                    
+                    T = prctile(imPAreg(:),opt.threshprctile);                    
+                end
+                imPAbw = imbinarize(imPAreg,T);                                
+                
+                %% dilate and find connected component to get PA region
                 se = strel('disk',opt.dilaterad);
                 imPAdil = imdilate(imPAbw,se);
                 
-                % get largest connected component
+                %% get largest connected component
                 CC = bwconncomp(imPAdil);
                 CCsize = cellfun(@(x) length(x), CC.PixelIdxList);
                 [a,b] = max(CCsize);
-                CClargepx = CC.PixelIdxList{b};
+                dCClargepx = CC.PixelIdxList{b};
                 % and use it to mask out the photoactivated region
                 mask = zeros(size(imPAdil));
                 mask(CClargepx) = 1;
@@ -281,11 +308,23 @@ classdef CellObjPA < handle
             CL.cellROI.mask = createMask(CL.cellROI.ROI);
         end        
         
-        function setCellNucROI(CL)
+        function setCellNucROI(CL,options)
             % manually set the region corresponding to the full cell and
             % the nucleus (each a continuous polygon containing activation
             % circle)            
             % hit enter for each when done
+            
+            opt = struct();
+            % set cell or nuc as circle with preset center / radius
+            opt.cellcent = NaN;
+            opt.cellrad = NaN;
+            opt.nuccent = NaN;
+            opt.nucrad = NaN;
+            
+            if (exist('options','var'))
+                % copy over passed options
+                opt = copyStruct(options,opt);
+            end            
             
             if (isnan(CL.ERimg))
                  % load ER image
@@ -300,19 +339,29 @@ classdef CellObjPA < handle
             end
             
             % full cell outline
-            disp(sprintf(...
-                'Click on image to draw polygon outline for full cell. \n Right-click to finish.'))
-            ROI = drawpolygon(gca);            
-            input('Drag ROI points to adjust. Hit enter when done adjusting\n')
-            
-            CL.fullcellROI = processPolygonROI(ROI);                                      
+            if (isnan(opt.cellcent) | isnan(opt.cellrad))
+                disp(sprintf(...
+                    'Click on image to draw polygon outline for full cell. \n Right-click to finish.'))
+                ROI = drawpolygon(gca);
+                input('Drag ROI points to adjust. Hit enter when done adjusting\n')
+            else
+                thvals = linspace(0,2*pi,30)';
+                bound = opt.cellcent + opt.cellrad*[cos(thvals) sin(thvals)]
+                ROI = drawpolygon(gca,'Position',bound);
+            end
+            CL.fullcellROI = processPolygonROI(ROI);
             
             % nucleus outline
-             disp(sprintf(...
-                'Click on image to draw polygon outline for nucleus. \n Right-click to finish.'))
-            ROI = drawpolygon(gca,'Color','g');            
-            input('Drag ROI points to adjust. Hit enter when done adjusting\n')
-            
+            if (isnan(opt.nuccent) | isnan(opt.nucrad))
+                  disp(sprintf(...
+                    'Click on image to draw polygon outline for nucleus. \n Right-click to finish.'))
+                ROI = drawpolygon(gca,'Color','g');            
+                input('Drag ROI points to adjust. Hit enter when done adjusting\n')
+            else
+                thvals = linspace(0,2*pi,30)';
+                bound = opt.nuccent + opt.nucrad*[cos(thvals) sin(thvals)];
+                ROI = drawpolygon(gca,'Position',bound);
+            end
             CL.nucROI = processPolygonROI(ROI);            
         end        
         
@@ -670,7 +719,7 @@ classdef CellObjPA < handle
             end                        
         end
         
-        function [regionTraces,imgs] = getROItraces(CL,getnonPATrace,loadoptions)
+        function [regionTraces,imgs] = getROItraces(CL,getnonPATrace,loadoptions,options)
             % get time-traces for all the cell ROIs
             % reads in all the images but does not save them to cell object
             % to conserve space
@@ -684,12 +733,29 @@ classdef CellObjPA < handle
                 loadoptions = struct();
             end
             
+            % other options, with defaults
+            opt = struct();
+            % input images rather than loading from file
+            opt.imgs = NaN;
+                        
+            if (exist('options','var'))
+                opt = copyStruct(options,opt);
+            end
+            
+            if (~exist('loadoptions'))
+                loadoptions = struct();
+            end
+            
             
             % get a second photoactivated signal as well.
             getsignal2 = ~isempty(CL.PA2file); 
             
             % load in all images
-            imgs = loadImages(CL.DirName,CL.PAprefile,CL.PAfile,loadoptions);
+            if (isnan(opt.imgs))
+                imgs = loadImages(CL.DirName,CL.PAprefile,CL.PAfile,loadoptions);
+            else
+                imgs = opt.imgs;
+            end
             
             if (getsignal2)
                 imgs2 = loadImages(CL.DirName,CL.PA2prefile,CL.PA2file,loadoptions);
@@ -824,46 +890,108 @@ classdef CellObjPA < handle
             [~,closewedge] = min(wedgedist);            
         end
         
-        function [halftimes,allcfit,fitfunc] = getHalfTimes(CL,maxframe)
+        function [halftimes,allcfit,fitfunc] = getHalfTimes(CL,options)
             % calculate half-times, from single exponential fit for all ROI regions
             % in this cell
             % saves output in CL.ROIs.halftime                        
             
-            % optionally, limit the maximal frame used for the fitting
-            if (~exist('maxframe','var'))
-                maxframe = CL.NFrame;
+            opt.maxframe = CL.NFrame;
+            % type of fitting function:
+            % 1exp = single exponential
+            % 2exp = double exponential
+            opt.fittype = '1exp';
+            
+            % solve for time when fitting function reaches this frac of
+            % maxium
+            opt.cutfrac = 0.5;
+            
+            
+            % minimal ratio of end to start signal to try fitting
+            opt.minsignalchange = 0;
+            
+            if (exist('options','var'))
+                opt = copyStruct(options,opt);
             end
             
-            tvals = (1:maxframe)*CL.dt;
+            if (isnan(opt.maxframe))
+                opt.maxframe = CL.NFrame;
+            end            
+            
+           disp(opt)
+            
+            tvals = (1:opt.maxframe)*CL.dt;
             tfit = tvals(CL.startPA+1:end);
             if (CL.startPA == 0)
                 timeshift = 0;
             else
                 timeshift = tvals(CL.startPA);
             end
-            fitfunc = @(c,t) c(1)*(1-exp(-(t-timeshift)/c(2)))+c(3);
+            if (strcmp(opt.fittype,'1exp'))
+                fitfunc = @(c,t) c(1)*(1-exp(-(t-timeshift)/c(2)))+c(3);
+            elseif (strcmp(opt.fittype,'1expnoshift'))               
+                fitfunc = @(c,t) c(1)*(1-exp(-(t-timeshift)/c(2)));    
+            elseif (strcmp(opt.fittype,'1exptimeshift'))
+                fitfunc = @(c,t) c(1)*(1-exp(-(t-c(4))/c(2)))+c(3);
+            elseif(strcmp(opt.fittype,'2exp'))
+                fitfunc = @(c,t) c(5)*(1 - c(1)*exp(-(t-timeshift)/c(2)) - c(3)*exp(-(t-timeshift)/c(4)));
+            else
+                error(sprintf('opt.fittype must be 1exp or 2exp. %s is invalid', opt.fittype))
+            end
             
             CL.fitfunc = fitfunc;
             for rc = 1:length(CL.ROIs)
                 ROI = CL.ROIs(rc);
                                
-                signal = CL.ROIs(rc).avgsignal(1:maxframe);
+                signal = CL.ROIs(rc).avgsignal(1:opt.maxframe);
+                
+                if (mean(signal(end-10:end))/mean(signal(CL.startPA+1:CL.startPA+10))<opt.minsignalchange)
+                    halftimes(rc) = inf;
+                     if (strcmp(opt.fittype,'1exp'))
+                        allcfit(rc,:) = inf*ones(1,3);
+                     elseif (strcmp(opt.fittype,'1expnoshift'))
+                         allcfit(rc,:) = inf*ones(1,2);
+                     elseif (strcmp(opt.fittype,'1exptimeshift'))
+                         allcfit(rc,:) = inf*ones(1,4);
+                     else
+                         allcfit(rc,:) = inf*ones(1,5);
+                     end
+                    CL.ROIs(rc).halftime = inf;
+                    continue
+                end
                 
                 if (CL.startPA ==0)
-                    yshift = 0;
+                    yshift = signal(1);
                 else
                     yshift = mean(signal(1:CL.startPA));                
                 end
-                cguess = [max(signal),10,yshift];
-                lb = [0 0 0]; ub = [inf inf inf];
+                if (strcmp(opt.fittype,'1exp'))
+                    cguess = [max(signal),10,yshift];
+                    lb = [0 0 -inf]; ub = [inf inf inf];
+                elseif (strcmp(opt.fittype,'1expnoshift'))
+                    cguess = [max(signal),10];
+                    lb = [0 0]; ub = [inf inf];                   
+                    fitfunc = @(c,t) c(1)*(1-exp(-(t-timeshift)/c(2))) + yshift;  
+                elseif (strcmp(opt.fittype,'1exptimeshift'))
+                    cguess = [max(signal),10,yshift,0];
+                    lb = [0 0 0 0]; ub = [inf inf inf tfit(end)/2];
+                else
+                    cguess = [0.5 10 0.5 100,max(signal)];
+                    lb = [0 0 0 0 0]; ub = [1 inf 1 inf inf];    
+                end
                 
                 options=optimset('Display','none');            
                 [cfit, resnorm] = lsqcurvefit(fitfunc,cguess,tfit,signal(CL.startPA+1:end),lb,ub,options);
                 allcfit(rc,:) = cfit;   
                 
-                halftimes(rc) = log(2)*cfit(2);
+                if (strcmp(opt.fittype,'1exp') || strcmp(opt.fittype,'1expnoshift') || strcmp(opt.fittype,'1exptimeshift'))                    
+                    halftimes(rc) = -log(opt.cutfrac)*cfit(2);                  
+                else                    
+                    cutval = cfit(5)*(1-cfit(1)-cfit(3)) + opt.cutfrac*(cfit(5)*(cfit(1)+cfit(3)));
+                    halftimes(rc) = fzero(@(t) fitfunc(cfit,t)-cutval, mean(tfit));
+                end
                 CL.ROIs(rc).halftime = halftimes(rc);
-                CL.ROIs(rc).cfit = cfit;                
+                CL.ROIs(rc).cfit = cfit;       
+                CL.ROIs(rc).fitfunc = fitfunc;
             end
             
         end

@@ -47,6 +47,7 @@ for cc = 1:2
     
    
     % give this cell a name so you can recognize it later
+    % NOTE: Cell name MUST contain FRAP001 (or some other number)
     name = sprintf('Rtn4a_overexp200219_FRAP%03d',cc);
     
     % data on this cell will be saved in this file

@@ -11,10 +11,22 @@ opt.dodisplay = 0;
 % cut off halftimes above this factor * movie length
 opt.maxtscl = 5;
 
+% maximum frame
+opt.maxframe = NaN;
+
+% type of fit
+opt.fittype = '1exp';
+
+% minimal ratio of end to start signal to try fitting
+opt.minsignalchange = 0;
+
+
 if (exist('options','var'))
     % copy over passed options
     opt = copyStruct(options,opt);
 end
+
+opt
 
 allhalftimes = {};
 
@@ -33,7 +45,7 @@ for cc = 1:length(allcells)
         end
     end
     
-    [halftimes,allcfit,fitfunc] = getHalfTimes(CL);
+    [halftimes,allcfit,fitfunc] = getHalfTimes(CL,opt);
     
     %%
     cmat = jet(nring);
@@ -42,6 +54,7 @@ for cc = 1:length(allcells)
         % wedges for this ring index
         % keep only those where half-time is < 2 * movie length
         wedgeind = find(~isring & whichring == rc & halftimes < max(tvals)*opt.maxtscl);
+        
         allhalftimes{rc} = [allhalftimes{rc} halftimes(wedgeind)];
         
         if (opt.dodisplay & ~isempty(wedgeind))
