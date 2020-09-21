@@ -244,7 +244,7 @@ classdef CellObjPA < handle
                 CC = bwconncomp(imPAdil);
                 CCsize = cellfun(@(x) length(x), CC.PixelIdxList);
                 [a,b] = max(CCsize);
-                dCClargepx = CC.PixelIdxList{b};
+                CClargepx = CC.PixelIdxList{b};
                 % and use it to mask out the photoactivated region
                 mask = zeros(size(imPAdil));
                 mask(CClargepx) = 1;
@@ -320,6 +320,7 @@ classdef CellObjPA < handle
             opt.cellrad = NaN;
             opt.nuccent = NaN;
             opt.nucrad = NaN;
+            opt.nucbound = NaN;
             
             if (exist('options','var'))
                 % copy over passed options
@@ -353,10 +354,14 @@ classdef CellObjPA < handle
             
             % nucleus outline
             if (isnan(opt.nuccent) | isnan(opt.nucrad))
+                if (isnan(opt.nucbound)) % set nucleus roi manually
                   disp(sprintf(...
                     'Click on image to draw polygon outline for nucleus. \n Right-click to finish.'))
                 ROI = drawpolygon(gca,'Color','g');            
                 input('Drag ROI points to adjust. Hit enter when done adjusting\n')
+                else % set as polygon 
+                    ROI = drawpolygon(gca,'Position',opt.nucbound);
+                end
             else
                 thvals = linspace(0,2*pi,30)';
                 bound = opt.nuccent + opt.nucrad*[cos(thvals) sin(thvals)];
@@ -556,8 +561,11 @@ classdef CellObjPA < handle
                         ct = ct+1;
                         wedgebound = bwboundaries(wedgemask);
                         wedgebound = fliplr(wedgebound{1});
-                        info = polygeom(wedgebound(:,1),wedgebound(:,2));
-                        newROI = struct('mask',wedgemask,'bound',wedgebound,'cent',info(2:3),'rad',Rvals(rc)*CL.pxperum,...
+                        % suppress polyshape repair warnings
+                        warning('off','MATLAB:polyshape:repairedBySimplify')
+                        polywedge = polyshape(wedgebound(1:end-1,1),wedgebound(1:end-1,2));
+                        [xc,yc] = centroid(polywedge);
+                        newROI = struct('mask',wedgemask,'bound',wedgebound,'cent',[xc yc],'rad',Rvals(rc)*CL.pxperum,...
                             'whichrad',rc,'whichth',tc,'type','wedge');
                         whichrad(ct) = rc;
                         allROIs(ct) = newROI;
@@ -984,7 +992,7 @@ classdef CellObjPA < handle
                 allcfit(rc,:) = cfit;   
                 
                 if (strcmp(opt.fittype,'1exp') || strcmp(opt.fittype,'1expnoshift') || strcmp(opt.fittype,'1exptimeshift'))                    
-                    halftimes(rc) = -log(opt.cutfrac)*cfit(2);                  
+                    halftimes(rc) = -log(1-opt.cutfrac)*cfit(2);                  
                 else                    
                     cutval = cfit(5)*(1-cfit(1)-cfit(3)) + opt.cutfrac*(cfit(5)*(cfit(1)+cfit(3)));
                     halftimes(rc) = fzero(@(t) fitfunc(cfit,t)-cutval, mean(tfit));

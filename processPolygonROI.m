@@ -9,9 +9,13 @@ ROIinfo.bound = ROI.Position;
 ROIinfo.mask = createMask(ROI);
 
 % get center of mass and approx radius (treating area as a circle)
-polyinfo = polygeom(ROIinfo.bound(:,1),ROIinfo.bound(:,2));
-ROIinfo.cent = polyinfo(2:3); % center of mass
+%polyinfo = polygeom(ROIinfo.bound(:,1),ROIinfo.bound(:,2));
+
+ROIpoly = polyshape(ROIinfo.bound(1:end-1,1),ROIinfo.bound(1:end-1,2));
+[xc,yc] = centroid(ROIpoly);
+ROIinfo.cent = [xc yc]; % center of mass
+
 % effective radius
-ROIinfo.rad = sqrt(polyinfo(1)/pi);
+ROIinfo.rad = sqrt(area(ROIpoly)/pi);
 
 end

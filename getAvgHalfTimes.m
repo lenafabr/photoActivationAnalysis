@@ -20,6 +20,7 @@ opt.fittype = '1exp';
 % minimal ratio of end to start signal to try fitting
 opt.minsignalchange = 0;
 
+opt.cutfrac = 0.5;
 
 if (exist('options','var'))
     % copy over passed options
