@@ -119,9 +119,9 @@ optionsROIs.getRingROIs = true;
 % get non-photoactivated luminal marker traces?
 getnonPATrace = false;
 
-clear regionTraces
+%clear regionTraces
 for cc = 1:length(allcells)
-    figure
+    %figure(cc)
     CL = allcells(cc);
     
     % Rvals are the radii at the center of each ring band
@@ -165,7 +165,7 @@ optionsFit.maxendfrano = 1;
 optionsFit.maxtscl = 5;
 
 % avghalftime is the median from all cells together
-[avghalftime,allhalftimes,allcellind,avghalftimecells] = getAvgHalfTimes(allcells,optionsFit)
+[avghalftime,allhalftimes,allcellind,avghalftimecells] = getAvgHalfTimes(allcells,optionsFit);
 
 %% bootstrap at the cell-to-cell level to get error bars
 [medhalftime,stehalftime] = bootstrapwedges(allcells,Rvals,allcellind,allhalftimes);

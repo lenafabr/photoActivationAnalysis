@@ -143,8 +143,9 @@ end
 figure
 loglog(Rvals,medhalftime,'.-')
 hold all
-loglog(Rvals,0.5*Rvals.^2,'--')
-legend('results','0.5 R^2')
+loglog(Rvals,Rvals.^2,'--')
+loglog(Rvals,10*Rvals,'--')
+legend('results','R^2','10R')
 xlabel('distance (um)')
 ylabel('signal rise time (sec)')
 set(gca,'FontSize',14)
