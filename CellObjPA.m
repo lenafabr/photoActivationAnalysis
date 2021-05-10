@@ -1,7 +1,7 @@
 % class definition for a cell object, with dynamic fluorescent data
 % to use for analyzing photoactivation movies
 
-classdef CellObjPA < handle
+classdef CellObjPA < matlab.mixin.Copyable   
     
     properties
         % Cell Name
@@ -153,15 +153,16 @@ classdef CellObjPA < handle
             
             % get FRAP number from cell name
             numstr = regexp(CL.Name,'FRAP([0-9]+)','tokens');
-            frapnum = sprintf('FRAP %s',numstr{1}{1});
-            
+            frapnum = sprintf('FRAP%s',numstr{1}{1});
+            frapnum2 = sprintf('FRAP %s',numstr{1}{1});
             
             if (exist([dirname metadatafile],'file'))
-                data = readtable([dirname metadatafile]);
+                data = readtable([dirname metadatafile],'Delimiter',',');
                 
                 for kc = 1:size(data,1)
                     if (contains(data.Key{kc},'mage|ATLConfocalSettingDefinition|CycleTime')...
-                            && ~contains(data.Key{kc},'Pre Series') && contains(data.Key{kc},frapnum))
+                            && ~contains(data.Key{kc},'Pre Series') && ...
+                            (contains(data.Key{kc},frapnum) || contains(data.Key{kc},frapnum2)))
                         CL.dt = str2num(data.Value{kc});
                         break
                     end
@@ -212,6 +213,7 @@ classdef CellObjPA < handle
             % Identify centroid and size of photoactivated region
             if (opt.manualrect)
                 imshow(imPAreg,[])
+                title(sprintf('%s: identify activated rectangle',CL.Name),'Interpreter','none')
                 disp('Draw rectangle')
                 rect = drawrectangle;
                 input('Hit enter when done adjusting rectangle');
@@ -294,6 +296,7 @@ classdef CellObjPA < handle
             imshow(CL.ERimg,[]);
             title(CL.Name)
             actroi = drawcircle(gca,'Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','y');
+            actroirect = drawrectangle(gca,'Position',CL.actROI.rect,'FaceAlpha',0,'Color','m')
             if (isempty(CL.actROI.mask))
                 CL.actROI.mask = createMask(actroi);
             end
@@ -321,20 +324,27 @@ classdef CellObjPA < handle
             opt.nuccent = NaN;
             opt.nucrad = NaN;
             opt.nucbound = NaN;
+            opt.showPA = false
             
             if (exist('options','var'))
                 % copy over passed options
                 opt = copyStruct(options,opt);
             end            
             
-            if (isnan(CL.ERimg))
+            if (isnan(CL.ERimg) & ~opt.showPA)
                  % load ER image
                 CL.ERimg = imread([CL.DirName,CL.ERfile],1);
             end      
             
-            imshow(CL.ERimg,[]);
-            title(CL.Name)
+            if (opt.showPA)
+                img = imread([CL.DirName,CL.PAfile],CL.NFrame-CL.startPA-1);
+                imshow(img,[]);
+            else
+                imshow(CL.ERimg,[]);
+            end
+            title(sprintf('%s: select boundaries', CL.Name),'Interpreter','none')
             actroi = drawcircle(gca,'Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','y');
+            actroirect = drawrectangle(gca,'Position',CL.actROI.rect,'FaceAlpha',0,'Color','m')
             if (isempty(CL.actROI.mask))
                 CL.actROI.mask = createMask(actroi);
             end
@@ -371,24 +381,38 @@ classdef CellObjPA < handle
         end        
         
         function showCellROI(CL,adjust)            
-            % redraw current cell ROI
-            % if adjust is present and true, allow for adjusting            
+            % redraw current ROIs for activated region, cell outline,
+            % nucleus
+            % if adjust is present and true, allow for adjusting and resave
+                                    
+            if (~exist('adjust','var'))
+                adjust = false;
+            end
+            
             imshow(CL.ERimg,[])
-            
-            CL.cellROI.ROI = drawpolygon('Position',CL.cellROI.bound);
-            actroi = drawcircle(gca,'Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','y');
-            if (isempty(CL.actROI.mask))
-                CL.actROI.mask = createMask(actroi);
+            actroi =  drawrectangle('Position',CL.actROI.rect,...
+                'Color','m','FaceAlpha',0,'InteractionsAllowed','none');
+            circroi =  drawcircle('Radius',CL.actROI.rad,'Center',CL.actROI.cent,...
+                'Color','m','FaceAlpha',0,'InteractionsAllowed','none');
+                
+            if (adjust)
+                title(sprintf('%s: adjust segmentation',CL.Name),'Interpreter','none')
+                cellroi =  drawpolygon('Position',CL.fullcellROI.bound,...
+                    'Color',[0,0.7,1],'FaceAlpha',0,'InteractionsAllowed','reshape');
+                nucroi =  drawpolygon('Position',CL.nucROI.bound,...
+                    'Color','y','FaceAlpha',0,'InteractionsAllowed','reshape');                              
+                input('Hit enter when done adjusting\n')
+                CL.fullcellROI = processPolygonROI(cellroi);
+                CL.nucROI = processPolygonROI(nucroi);
+                
+            else
+                title(sprintf('%s: segmented regions',CL.Name),'Interpreter','none')
+                cellroi =  drawpolygon('Position',CL.fullcellROI.bound,...
+                    'Color',[0,0.7,1],'FaceAlpha',0,'InteractionsAllowed','none');
+                nucroi =  drawpolygon('Position',CL.nucROI.bound,...
+                    'Color','y','FaceAlpha',0,'InteractionsAllowed','none');                
             end
-            
-            if (exist('adjust','var'))
-                if (adjust)
-                    input('Hit enter when done adjusting\n')
-            
-                    CL.cellROI.bound = CL.cellROI.ROI.Position;   
-                    CL.cellROI.mask = createMask(CL.cellROI.ROI);
-                end
-            end
+
         end
         
         function showRings(CL,imgscl)
@@ -421,7 +445,10 @@ classdef CellObjPA < handle
             opt = struct();
             % at least this fraction of the wedge must be in cell area in
             % order to keep it
-            opt.minarea = 0.8 ;        
+            opt.minareafrac = 0.8 ;        
+            % or have amount total in um^2
+            opt.minarea = 0;
+            
             opt.ntheta = 30; % default number of angular slices
             % set min radius value in um; if not provided, use the
             % activation radius
@@ -435,18 +462,36 @@ classdef CellObjPA < handle
             % include ring ROIs as well
             opt.getRingROIs = false;
             
+            % mask out activated rectangle from regions as well?
+            opt.actmask = true;
+            
+            % erode mask by this many um, to stay away from boundary
+            opt.erodemask = 0;
+            
             opt.dodisplay = 0;
             
             if (exist('options','var'))
                 opt = copyStruct(options,opt);
             end
+                       
             
-            thetaall = linspace(0,2*pi,opt.ntheta+1);
+            thetaall = linspace(0,2*pi,opt.ntheta);
             thetain = thetaall(1:end-1);
             thetaout = thetaall(2:end);
             
             % mask of cell without nucleus
             nonucmask = CL.fullcellROI.mask & ~CL.nucROI.mask;
+            % remove activated region as well?
+            if (opt.actmask)
+                imshow(CL.ERimg,[])
+                actrect = drawrectangle('Position',CL.actROI.rect);
+                actmask = createMask(actrect);
+                nonucmask = nonucmask & ~actmask;
+            end
+            if (opt.erodemask > 0)
+                SE = strel('disk',ceil(opt.erodemask*CL.pxperum),8);
+                nonucmask = imerode(nonucmask,SE);
+            end
             
             % activation radius in um
             if (isnan(opt.minR))
@@ -462,6 +507,7 @@ classdef CellObjPA < handle
             nR = length(Rvalsin);
             
             imshow(CL.ERimg,[])
+            title(sprintf('%s: getting wedges',CL.Name),'Interpreter','none')
             
             %% get angular slice masks
             actcent = CL.actROI.cent;
@@ -487,11 +533,12 @@ classdef CellObjPA < handle
             clear allROIs
             if (opt.dodisplay)
                 imshowpair(CL.ERimg,nonucmask)
+                title(sprintf('%s: getting wedges',CL.Name),'Interpreter','none')
                 cmap = jet(length(Rvalsin));
                 drawcircle('Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','w')
             end
             
-            ringROIs = struct('cent',{},'rad',{},'mask',{},'type',{},'whichrad',{},'whichth',{},'bound',{});
+            ringROIs = struct('cent',{},'rad',{},'mask',{},'type',{},'whichrad',{},'whichth',{},'bound',{},'angle',{});
             for rc = 1:nR
                 %rc
                 outroi = drawcircle('Center',CL.actROI.cent,'Radius',Rvalsout(rc)*CL.pxperum,'Visible','off');
@@ -513,7 +560,7 @@ classdef CellObjPA < handle
                     end
                     
                     ringROIs(rc) = struct('cent',CL.actROI.cent,'rad',Rvals(rc)*CL.pxperum,'mask',ringmask2,...
-                        'type','ring','whichrad',rc,'bound',NaN,'whichth',NaN);                      
+                        'type','ring','whichrad',rc,'bound',NaN,'whichth',NaN,'angle',NaN);                      
                     ringROIs(rc).bound = ringbounds;
                 end
                 
@@ -523,7 +570,7 @@ classdef CellObjPA < handle
                     
                     if (~isnan(opt.arcshift))
                         % shift wedges by this arc length
-                        arcstart = 0:opt.arcshift:totarc-opt.arclen/2;
+                        arcstart = 0:opt.arcshift:totarc;%-opt.arclen/2;
                     else
                         % fixed total number of wedges
                         arcstart = linspace(0,totarc-opt.arclen/2,opt.ntheta);
@@ -555,18 +602,27 @@ classdef CellObjPA < handle
                     wedgemask = wedgemask & nonucmask;
                     %imshowpair(CL.ERimg,wedgemask)
                     
-                    % only keep if more than 80% within cell region
-                    if nnz(wedgemask) > opt.minarea*nw
+                    % only keep if more than 80% within cell region                    
+                    
+                    nwmask = nnz(wedgemask);
+                    
+                    if nwmask > opt.minareafrac*nw & nwmask > opt.minarea*CL.pxperum^2
                         wedgemask = wedgemask & nonucmask;
                         ct = ct+1;
                         wedgebound = bwboundaries(wedgemask);
-                        wedgebound = fliplr(wedgebound{1});
+                        boundlen = cellfun(@(x) length(x), wedgebound);
+                        [~,bi] = max(boundlen); 
+                        wedgebound = fliplr(wedgebound{bi});
                         % suppress polyshape repair warnings
                         warning('off','MATLAB:polyshape:repairedBySimplify')
                         polywedge = polyshape(wedgebound(1:end-1,1),wedgebound(1:end-1,2));
                         [xc,yc] = centroid(polywedge);
                         newROI = struct('mask',wedgemask,'bound',wedgebound,'cent',[xc yc],'rad',Rvals(rc)*CL.pxperum,...
                             'whichrad',rc,'whichth',tc,'type','wedge');
+                        
+                        % angle associated with wedge center
+                        newROI.angle = atan2(yc-actcent(2),xc-actcent(1));
+                        
                         whichrad(ct) = rc;
                         allROIs(ct) = newROI;
                         
@@ -777,8 +833,13 @@ classdef CellObjPA < handle
             
             % add on activation mask and whole cell mask
             allmasks(:,:,end+1) = CL.actROI.mask;
-            allmasks(:,:,end+1) = CL.cellROI.mask;
-             allmasks(:,:,end+1) = CL.fullcellROI.mask;
+            % mask for cell region around activation zone; may be undefined
+            if (isempty(CL.cellROI.mask)) 
+                allmasks(:,:,end+1) = CL.fullcellROI.mask;
+            else
+                allmasks(:,:,end+1) = CL.cellROI.mask;
+            end
+            allmasks(:,:,end+1) = CL.fullcellROI.mask;
              
             % area in each mask (in um^2)
             areas = squeeze(sum(sum(allmasks,1),2))/CL.pxperum^2;
@@ -894,12 +955,12 @@ classdef CellObjPA < handle
             % find the ROI whose center is closest to the desired point
             
             wedgedist = cat(1,CL.ROIs.cent) - pt;
-            wedgedist = sqrt(sum(wedgedist.^2,2))
+            wedgedist = sqrt(sum(wedgedist.^2,2));
             [~,closewedge] = min(wedgedist);            
         end
         
         function [halftimes,allcfit,fitfunc] = getHalfTimes(CL,options)
-            % calculate half-times, from single exponential fit for all ROI regions
+            % calculate half-times, from single or double exponential fit for all ROI regions
             % in this cell
             % saves output in CL.ROIs.halftime                        
             
@@ -917,6 +978,35 @@ classdef CellObjPA < handle
             % minimal ratio of end to start signal to try fitting
             opt.minsignalchange = 0;
             
+            % which signal to use 
+            % 1 = avgsignal
+            % 2 = avgsignal2
+            opt.whichsignal = 1;
+            
+            % do the wedge ROIs and the ring ROIs
+            opt.dowedge= true;
+            opt.doring = true;
+            
+            % notify on whether the fitting worked
+            opt.fitnotify = 'none';
+            
+            % how far from end to average when considering whether
+            % sufficient signal change
+            opt.endsignalavg = 20; % in frames
+            
+            opt.initsignalavg=NaN;
+            
+            % window span for smoothing activated region to get max val
+            opt.actsmooth = 10; 
+            % do not use signal if it starts more than partway up
+            % between initial and max values of activated region
+            % turned off by default
+            opt.maxyshift = inf;
+            
+            % check for too high a fano factor at the end
+            opt.maxendfano=-1;
+            opt.endframes=20;
+            
             if (exist('options','var'))
                 opt = copyStruct(options,opt);
             end
@@ -925,44 +1015,87 @@ classdef CellObjPA < handle
                 opt.maxframe = CL.NFrame;
             end            
             
-           disp(opt)
+          % disp(opt)
             
             tvals = (1:opt.maxframe)*CL.dt;
-            tfit = tvals(CL.startPA+1:end);
-            if (CL.startPA == 0)
-                timeshift = 0;
-            else
+            tfit = tvals(CL.startPA:end);
+           % if (CL.startPA == 0)
+           %     timeshift = 0;
+           % else
                 timeshift = tvals(CL.startPA);
-            end
+           % end
             if (strcmp(opt.fittype,'1exp'))
                 fitfunc = @(c,t) c(1)*(1-exp(-(t-timeshift)/c(2)))+c(3);
             elseif (strcmp(opt.fittype,'1expnoshift'))               
                 fitfunc = @(c,t) c(1)*(1-exp(-(t-timeshift)/c(2)));    
+            elseif (strcmp(opt.fittype,'1expbleach'))               
+                fitfunc = @(c,t) c(1)*exp(-(t-timeshift)/c(3)).*(1-exp(-(t-timeshift)/c(2)));    
             elseif (strcmp(opt.fittype,'1exptimeshift'))
                 fitfunc = @(c,t) c(1)*(1-exp(-(t-c(4))/c(2)))+c(3);
             elseif(strcmp(opt.fittype,'2exp'))
                 fitfunc = @(c,t) c(5)*(1 - c(1)*exp(-(t-timeshift)/c(2)) - c(3)*exp(-(t-timeshift)/c(4)));
+            elseif (strcmp(opt.fittype,'2expfixlim'))
+                % fix initial and final values from data                                
+                fitfunc0 = @(c,t) (1 - c(1)*exp(-(t-timeshift)/c(2)) - c(3)*exp(-(t-timeshift)/c(4))); 
+                fitfunc = fitfunc0;
+            elseif (strcmp(opt.fittype,'2expfixlimbleach'))
+                fitfunc0 = @(c,t) exp(-(t-timeshift)/c(5)).*(1 - c(1)*exp(-(t-timeshift)/c(2)) - c(3)*exp(-(t-timeshift)/c(4))); 
+                fitfunc = fitfunc0;
             else
                 error(sprintf('opt.fittype must be 1exp or 2exp. %s is invalid', opt.fittype))
+            end                
+            
+            if (strcmp(opt.fittype,'1exp'))
+                allcfit = inf*ones(length(CL.ROIs),3);
+            elseif (strcmp(opt.fittype,'1expnoshift'))
+                allcfit = inf*ones(length(CL.ROIs),2);
+            elseif (strcmp(opt.fittype,'1exptimeshift'))
+                allcfit = inf*ones(length(CL.ROIs),4);
+            elseif (strcmp(opt.fittype,'2exp'))
+                allcfit = inf*ones(length(CL.ROIs),5);
+            elseif (strcmp(opt.fittype,'2expfixlim'))
+                allcfit = inf*ones(length(CL.ROIs),4);
+            elseif (strcmp(opt.fittype,'2expfixlimbleach'))
+                allcfit = inf*ones(length(CL.ROIs),5);
+            else
+                allcfit = inf*ones(length(CL.ROIs),5);
             end
             
-            CL.fitfunc = fitfunc;
             for rc = 1:length(CL.ROIs)
                 ROI = CL.ROIs(rc);
+
+                if (strcmp(ROI.type,'wedge') && ~opt.dowedge)
+                    CL.ROIs(rc).halftime= NaN;
+                    continue
+                elseif (strcmp(ROI.type,'ring') && ~opt.doring)
+                    CL.ROIs(Rc).halftime = NaN;
+                    continue
+                end
                                
-                signal = CL.ROIs(rc).avgsignal(1:opt.maxframe);
+                if (opt.whichsignal==1)
+                    signal = CL.ROIs(rc).avgsignal(1:opt.maxframe);
+                elseif (opt.whichsignal==2)
+                    signal = CL.ROIs(rc).avgsignal2(1:opt.maxframe);
+                else
+                    error("opt.whichsignal must be 1 or 2")
+                end
                 
-                if (mean(signal(end-10:end))/mean(signal(CL.startPA+1:CL.startPA+10))<opt.minsignalchange)
-                    halftimes(rc) = inf;
-                     if (strcmp(opt.fittype,'1exp'))
-                        allcfit(rc,:) = inf*ones(1,3);
-                     elseif (strcmp(opt.fittype,'1expnoshift'))
-                         allcfit(rc,:) = inf*ones(1,2);
-                     elseif (strcmp(opt.fittype,'1exptimeshift'))
-                         allcfit(rc,:) = inf*ones(1,4);
-                     else
-                         allcfit(rc,:) = inf*ones(1,5);
-                     end
+                
+                % calculate z score of end signal average vs
+                % pre-photoactivation average
+                premean = mean(signal(1:CL.startPA+1));
+                prestd = std(signal(1:CL.startPA+1))/sqrt(CL.startPA);
+                endmean = mean(signal(end-opt.endsignalavg:end));
+                zscore = (endmean-premean)/prestd;
+                
+                if (nnz(~isnan(signal(CL.startPA+1:end))) < 10) % not enough datapoints
+                     halftimes(rc) = inf;                   
+                    CL.ROIs(rc).halftime = inf;
+                    continue
+                %elseif (mean(signal(end-10:end))/mean(signal(CL.startPA+1:CL.startPA+10))<opt.minsignalchange)
+                %elseif (mean(signal(end-opt.endsignalavg:end))/mean(signal(1:CL.startPA+1))<opt.minsignalchange)
+                elseif(zscore < opt.minsignalchange)
+                    halftimes(rc) = inf;                   
                     CL.ROIs(rc).halftime = inf;
                     continue
                 end
@@ -970,8 +1103,56 @@ classdef CellObjPA < handle
                 if (CL.startPA ==0)
                     yshift = signal(1);
                 else
-                    yshift = mean(signal(1:CL.startPA));                
+                    % average over initial period 
+                    if (isnan(opt.initsignalavg))
+                        endinit = CL.startPA;
+                    else
+                        endinit = opt.initsignalavg;
+                    end
+                    yshift = mean(signal(1:endinit));                
                 end
+                if (strcmp(opt.fittype,'2expfixlim') |strcmp(opt.fittype,'2expfixlimbleach') | strcmp(opt.fittype,'1expbleach') )         
+                    % max value in activated region
+                    %endvals = mean(CL.actROI.avgsignal(end-10:end));
+                    %endvals = prctile(CL.actROI.avgsignal,90);
+                    %endvals = max(CL.actROI.avgsignal);
+                    
+                    actsmooth = smooth(CL.actROI.avgsignal,opt.actsmooth);
+                    %if (strcmp(opt.fittype,'2expfixlimbleach') | strcmp(opt.fittype,'1expbleach'))
+                    % get max of smoothed signal in activated region                    
+                    endvals = max(actsmooth);
+                    if (CL.startPA<=1)
+                        actyshift = actsmooth(1);
+                    else                        
+                        actyshift = mean(actsmooth(1:CL.startPA-1));
+                    end
+                    %else
+                        % get smoothed signal at the end                        
+                    %    endvals = mean(actsmooth(end-10:end));
+                    %end
+%                     for rc = 1:length(CL.ROIs)
+%                         if (strcmp(CL.ROIs(rc).type,'ring') )
+%                             val = mean(CL.ROIs(rc).avgsignal(end-10:end));
+%                             if (val>endvals); endvals = val; end
+%                         end
+%                     end
+                end
+                
+                % check for too much error at the end
+                if (opt.maxendfano>0)
+                    meanend = mean(signal(end-opt.endframes:end));
+                    stdend = std(signal(end-opt.endframes:end));
+                    
+                    if (stdend/meanend>opt.maxendfano)
+                        % too noisy
+                        % don't bother trying to fit.
+                        CL.ROIs(rc).halftime= NaN;
+                        halftimes(rc) = NaN;
+                        CL.ROIs(rc).cfit = [];
+                        continue
+                    end
+                end
+                
                 if (strcmp(opt.fittype,'1exp'))
                     cguess = [max(signal),10,yshift];
                     lb = [0 0 -inf]; ub = [inf inf inf];
@@ -979,30 +1160,258 @@ classdef CellObjPA < handle
                     cguess = [max(signal),10];
                     lb = [0 0]; ub = [inf inf];                   
                     fitfunc = @(c,t) c(1)*(1-exp(-(t-timeshift)/c(2))) + yshift;  
+                elseif (strcmp(opt.fittype,'1expbleach'))
+                    %cguess = [max(signal),10,100];
+                    %lb = [0 0 0]; ub = [inf inf inf];                   
+                    %fitfunc = @(c,t) c(1)*exp(-(t-timeshift)/c(3)).*(1-exp(-(t-timeshift)/c(2))) + yshift; 
+                    
+                    cguess = [endvals,10, 100];
+                    lb = [0 0 0]; ub = [inf, inf, inf];
+                    fitfunc = @(c,t) c(1)*exp(-(t-timeshift)/c(3)).*(1-exp(-(t-timeshift)/c(2))) + yshift;
+    
                 elseif (strcmp(opt.fittype,'1exptimeshift'))
                     cguess = [max(signal),10,yshift,0];
                     lb = [0 0 0 0]; ub = [inf inf inf tfit(end)/2];
+                elseif (strcmp(opt.fittype,'2expfixlim'))
+                     cguess = [0.5 10 0.5 50];       
+                     lb = [0 0 0 0]; ub = [1 inf 1 inf];
+                     fitfunc = @(c,t) (endvals - actyshift-yshift)*fitfunc0(c,t) + yshift;   
+                elseif (strcmp(opt.fittype,'2expfixlimbleach'))
+                    
+                    cguess = [0.5 1 2 30];
+                    lb = [0 0 0 1]; ub = [1 inf 1 inf];
+                    maxval = max(CL.actROI.avgsignal);
+                    endvals = maxval;
+                    fitfunc = @(c,t) maxval*exp(-(t-timeshift)/c(4)).*...
+                    (1 - c(1)*exp(-(t-timeshift)/c(2)) - (1-c(1))*exp(-(t-timeshift)/c(3))) + yshift; 
+
+                    % cguess = [0.5 10 0.5 50,10];       
+                    % lb = [0 0 0 0 1]; ub = [1 inf 1 inf inf];
+                    % fitfunc = @(c,t) (endvals - yshift)*fitfunc0(c,t) + yshift;   
                 else
                     cguess = [0.5 10 0.5 100,max(signal)];
                     lb = [0 0 0 0 0]; ub = [1 inf 1 inf inf];    
                 end
                 
-                options=optimset('Display','none');            
-                [cfit, resnorm] = lsqcurvefit(fitfunc,cguess,tfit,signal(CL.startPA+1:end),lb,ub,options);
-                allcfit(rc,:) = cfit;   
+                options=optimoptions('lsqcurvefit','Display',opt.fitnotify,...
+                    'MaxFunctionEvaluations',5000, 'MaxIterations',5000,'FunctionTolerance',1e-4);            
+                [cfit, resnorm,residual,exitflag,output] = lsqcurvefit(fitfunc,cguess,tfit,signal(CL.startPA:end),lb,ub,options);
+                                
+                if (exitflag <= 0)
+                    CL.ROIs(rc).halftime= NaN;
+                    halftimes(rc) = NaN;
+                    continue
+                end
+                
+                allcfit(rc,1:length(cfit)) = cfit;                   
                 
                 if (strcmp(opt.fittype,'1exp') || strcmp(opt.fittype,'1expnoshift') || strcmp(opt.fittype,'1exptimeshift'))                    
-                    halftimes(rc) = -log(1-opt.cutfrac)*cfit(2);                  
-                else                    
+                    halftimes(rc) = -log(1-opt.cutfrac)*cfit(2);  
+                elseif (strcmp(opt.fittype,'2expfixlim') )     
+                    
+                    % do not use this wedge if signal starts more than
+                    % partway up the activated region signal scale
+                    if (yshift > actyshift + opt.maxyshift*(endvals-actyshift))
+                         CL.ROIs(rc).halftime= NaN;
+                         halftimes(rc) = NaN;
+                         continue
+                    end
+                    
+                    cutsignal = opt.cutfrac*(endvals-yshift)+yshift;
+                    
+                    fvals = fitfunc(cfit,tfit)-cutsignal;
+                    nosol = false;                    
+                    posind = find(fvals>0);
+                    
+                    % get left and right boundary for the zero
+                    if (isempty(posind))
+                        %%
+                        tleft = tfit(end);
+                        
+                        tend = tfit(end);
+                        for tc = 1:5
+                            tend = tend*2;
+                            fend = fitfunc(cfit,tend)-cutsignal;
+                            if (fend>0)
+                                tright = tend;
+                                break
+                            end
+                        end
+                        if (fend<0) % failed to find solution
+                            halftimes(rc) = NaN;   
+                            nosol= true;
+                        end
+                    else
+                         if posind(1)==1                    
+                            warning('function always above cutsignal')
+                            CL.ROIs(rc).halftime= NaN;
+                            halftimes(rc) = NaN;
+                            continue
+                         else
+                            tleft = tfit(posind(1)-1);
+                         end
+                        
+                        tright = tfit(posind(1));
+                    end
+                   
+                    if (~nosol)
+                        [halftimes(rc),fval,exitflag] = fzero(@(t) fitfunc(cfit,t)-cutsignal, [tleft tright]);                    
+                    end                                                            
+                    
+%                     [halftimes(rc),fval,exitflag] = fzero(@(t) fitfunc(cfit,t)-(opt.cutfrac*(endvals-yshift)+yshift), mean(tfit));                 
+%                     if (exitflag<0)
+%                         [halftimes(rc),fval,exitflag] = fzero(@(t) fitfunc(cfit,t)-(opt.cutfrac*(endvals-yshift)+yshift), max(tfit)*2);                 
+%                         if (exitflag<0)
+%                             halftimes(rc) = NaN;
+%                         end
+%                     end
+                elseif (strcmp(opt.fittype,'2expfixlimbleach')) 
+                    %dfitfunc = @(t) -maxval/cfit(4)*exp(-(t-timeshift)/cfit(4)).*...
+                    %(1-cfit(1)*exp(-(t-timeshift)/cfit(2)) - (1-cfit(1))*exp(-(t-timeshift)/cfit(3))) ...
+                   % + maxval*exp(-(t-timeshift)/cfit(4)).*...
+                    %(cfit(1)/cfit(2)*exp(-(t-timeshift)/cfit(2)) + (1-cfit(1))/cfit(3)*exp(-(t-timeshift)/cfit(3))); 
+
+                   fitfunc2 = @(c,t) maxval.*exp(-(t-timeshift)/c(4)).*...
+                   (1 - c(1)*exp(-(t-timeshift)/c(2)) - (1-c(1))*exp(-(t-timeshift)/c(3))) + yshift; 
+                
+                    %fitfunc2 = @(c,t) maxval.*...
+                    %(1 - c(1)*exp(-(t-timeshift)/c(2)) - (1-c(1))*exp(-(t-timeshift)/c(3))) + yshift; 
+                
+                    % time of max
+                    %tmax = fzero(dfitfunc,mean(tfit));
+                    %vmax = fitfunc(cfit,tmax);
+                    tcheck = linspace(0,max(cfit(2:4))*10,1e4);
+                    vmax = max(fitfunc2(cfit,tcheck));
+                    %cutsignal = opt.cutfrac*(maxval - yshift)+yshift;
+                    cutsignal = opt.cutfrac*(vmax - yshift)+yshift;
+                    
+                    fvals = fitfunc2(cfit,tfit)-cutsignal;
+                    nosol = false;
+                    posind = find(fvals>0);
+                    
+                    % get left and right boundary for the zero
+                    if (isempty(posind))
+                        %%
+                        tleft = tfit(end);
+                        
+                        tend = tfit(end);
+                        for tc = 1:5
+                            tend = tend*2;
+                            fend = fitfunc2(cfit,tend)-cutsignal;
+                            if (fend>0)
+                                tright = tend;
+                                break
+                            end
+                        end
+                        if (fend<0) % failed to find solution
+                            halftimes(rc) = NaN;
+                            nosol= true;
+                        end
+                    else
+                        if posind(1)==1
+                            warning('function always above cutsignal')
+                            CL.ROIs(rc).halftime= NaN;
+                            halftimes(rc) = NaN;
+                            continue
+                        else
+                            tleft = tfit(posind(1)-1);
+                        end
+                        
+                        tright = tfit(posind(1));
+                    end
+                    
+                    if (~nosol)
+                        [halftimes(rc),fval,exitflag] = fzero(@(t) fitfunc2(cfit,t)-cutsignal, [tleft tright]);
+                    end
+                    roi.fitfunc2 = fitfunc2;
+                elseif (strcmp(opt.fittype,'1expbleach'))
+                    dfitfunc = @(t) -cfit(1)/cfit(3)*exp(-(t-timeshift)/cfit(3)).*(1-exp(-(t-timeshift)/cfit(2)))...
+                        + cfit(1)*exp(-(t-timeshift)/cfit(3)).*1/cfit(2)*exp(-(t-timeshift)/cfit(2));
+                    % time of max
+                    tcheck = linspace(1e-4,max(cfit(2:3))*10,1e4);
+                    vmax = max(fitfunc(cfit,tcheck));
+                    
+                    %trytimes = linspace(tvals(10),max(cfit(2:3)),50);
+                    halfopt = optimset('display','off');
+                    % cutsignal = opt.cutfrac*(max(CL.actROI.avgsignal) - yshift)+yshift;
+                    cutsignal = opt.cutfrac*(vmax - yshift)+yshift;
+                    %for tc = 1:length(trytimes)
+                    [halftimes(rc),fval,exitflaghalf] = fzero(@(t) fitfunc(cfit,t)-cutsignal, tfit(2),halfopt);
+                    if (exitflaghalf<0) % try different starting points
+                        [halftimes(rc),fval,exitflag] = fzero(@(t) fitfunc(cfit,t)-cutsignal, tfit(end)*2,halfopt);
+                    end
+                    
+                    %halftimes(rc) = -log(1-opt.cutfrac)*cfit(2)+timeshift;
+                else
                     cutval = cfit(5)*(1-cfit(1)-cfit(3)) + opt.cutfrac*(cfit(5)*(cfit(1)+cfit(3)));
-                    halftimes(rc) = fzero(@(t) fitfunc(cfit,t)-cutval, mean(tfit));
+                    [halftimes(rc),fval,exitflag] = fzero(@(t) fitfunc(cfit,t)-cutval, mean(tfit));
+                end
+                
+                if (strcmp(opt.fittype,'2expfixlim') | strcmp(opt.fittype,'2expfixlimbleach') | strcmp(opt.fittype,'1expbleach'))
+                    halftimes(rc) = halftimes(rc)-timeshift;
                 end
                 CL.ROIs(rc).halftime = halftimes(rc);
-                CL.ROIs(rc).cfit = cfit;       
+                CL.ROIs(rc).cfit = cfit;
                 CL.ROIs(rc).fitfunc = fitfunc;
             end
-            
+            %disp('foo')
         end
+        
+        function plotExampleWedgeROIs(CL,pickangle)
+            % plot example wedge ROIs at different radii
+            % all lying approximately along the desired angle
+            % pickangle = degrees, between -180 and 180 around the
+            % photoactivation center
+            % 0 degrees corresponds to East, angle increases clockwise
+                        
+            whichrad = [CL.ROIs.whichrad]; % which radius each roi corresponds to
+            % is this a wedge ROI?
+            iswedge= cellfun(@(x) contains(x,'wedge'),{CL.ROIs.type});
+            % angle for each ROI
+            angs = [CL.ROIs.angle];
+            
+            subplot(1,2,1)
+            imshow(CL.ERimg,[]);
+            title(sprintf('%s: example ROIs',CL.Name),'Interpreter','none');
+            drawrectangle('Position',CL.actROI.rect,'Color','m','FaceAlpha',0.1,'InteractionsAllowed','none')
+            drawcircle('Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','m','InteractionsAllowed','none','FaceAlpha',0)
+            
+            subplot(1,2,2)
+            tvals = (1:CL.NFrame)*CL.dt;
+            plot(tvals,CL.actROI.avgsignal,'m','LineWidth',1)
+            hold all
+            
+            cmat = parula(max(whichrad));
+            for rc  = 1:max(whichrad)
+                wedgeind = find(iswedge & whichrad==rc);
+                if (isempty(wedgeind)); continue; end
+                [~,wcc] = min(abs(angs(wedgeind)-pickangle*pi/180));
+                wc = wedgeind(wcc);
+                roi = CL.ROIs(wc);
+                
+                subplot(1,2,1)
+                drawpolygon('Position',roi.bound,'Color',cmat(rc,:),'InteractionsAllowed','none','FaceAlpha',0);
+                
+                subplot(1,2,2)                
+                plot(tvals,roi.avgsignal,'Color',cmat(rc,:),'LineWidth',1)
+                hold all
+                
+                % plot fitted function
+                if (isfield(roi,'cfit'))
+                    if (~isempty(roi.cfit))
+                    tfit = tvals(CL.startPA:end);
+                    fitvals = roi.fitfunc(roi.cfit,tfit);
+                    plot(tfit,fitvals,'--','Color',cmat(rc,:),'LineWidth',1.5)
+                    end
+                end
+            end
+            subplot(1,2,2)
+            set(gca,'FontSize',14)
+            xlabel('time (sec)')
+            ylabel('signal per area')
+            hold off
+        end
+        
     end
-
+   
 end

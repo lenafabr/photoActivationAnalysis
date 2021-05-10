@@ -24,7 +24,8 @@ function [imgs,startPA,rawimgs] = loadImages(dirname,prefile,PAfile,options)
 % ----- set default options ----
 opt = struct();
 
-opt.denoise = 'median'; % denoising filter
+%opt.denoise = 'median'; % denoising filter
+opt.denoise = '';
 opt.medpx = 3; % pixels to use in median filter
 
 if (exist('options','var'))
