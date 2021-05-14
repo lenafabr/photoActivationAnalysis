@@ -1357,13 +1357,20 @@ classdef CellObjPA < matlab.mixin.Copyable
             %disp('foo')
         end
         
-        function plotExampleWedgeROIs(CL,pickangle)
+        function plotExampleWedgeROIs(CL,pickangle,options)
             % plot example wedge ROIs at different radii
             % all lying approximately along the desired angle
             % pickangle = degrees, between -180 and 180 around the
             % photoactivation center
             % 0 degrees corresponds to East, angle increases clockwise
-                        
+                    
+            opt = struct();
+            opt.showrad = NaN;
+            
+            if (exist('options','var'))
+                opt = copyStruct(options,opt);
+            end
+                
             whichrad = [CL.ROIs.whichrad]; % which radius each roi corresponds to
             % is this a wedge ROI?
             iswedge= cellfun(@(x) contains(x,'wedge'),{CL.ROIs.type});
@@ -1381,8 +1388,13 @@ classdef CellObjPA < matlab.mixin.Copyable
             plot(tvals,CL.actROI.avgsignal,'m','LineWidth',1)
             hold all
             
+            if (isnan(opt.showrad)); opt.showrad =1:max(whichrad); end
+            
             cmat = parula(max(whichrad));
-            for rc  = 1:max(whichrad)
+            maxval = 0;
+            for rc  = opt.showrad
+                if (rc>max(whichrad)); continue; end
+                
                 wedgeind = find(iswedge & whichrad==rc);
                 if (isempty(wedgeind)); continue; end
                 [~,wcc] = min(abs(angs(wedgeind)-pickangle*pi/180));
@@ -1394,6 +1406,7 @@ classdef CellObjPA < matlab.mixin.Copyable
                 
                 subplot(1,2,2)                
                 plot(tvals,roi.avgsignal,'Color',cmat(rc,:),'LineWidth',1)
+                maxval = max(maxval,max(roi.avgsignal));
                 hold all
                 
                 % plot fitted function
@@ -1407,6 +1420,7 @@ classdef CellObjPA < matlab.mixin.Copyable
             end
             subplot(1,2,2)
             set(gca,'FontSize',14)
+            ylim([0,maxval])
             xlabel('time (sec)')
             ylabel('signal per area')
             hold off
