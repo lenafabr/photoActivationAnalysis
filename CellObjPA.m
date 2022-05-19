@@ -112,10 +112,12 @@ classdef CellObjPA < matlab.mixin.Copyable
                 CL.ERfile = ERfile;
             end
             
+            if (exist('metafile','var'))
             if (contains(metafile,'%s'))
                 metadatafile = sprintf(metafile,CL.Name);
             else
                 metadatafile = metafile;
+            end
             end
             
             % ------------
@@ -150,25 +152,31 @@ classdef CellObjPA < matlab.mixin.Copyable
             % WARNING: only loads frame rate for during the
             % photoactivation period
             % -------
+                        
             
-            % get FRAP number from cell name
-            numstr = regexp(CL.Name,'FRAP([0-9]+)','tokens');
-            frapnum = sprintf('FRAP%s',numstr{1}{1});
-            frapnum2 = sprintf('FRAP %s',numstr{1}{1});
-            
-            if (exist([dirname metadatafile],'file'))
-                data = readtable([dirname metadatafile],'Delimiter',',');
+            if (exist('metafile','var'))
                 
-                for kc = 1:size(data,1)
-                    if (contains(data.Key{kc},'mage|ATLConfocalSettingDefinition|CycleTime')...
-                            && ~contains(data.Key{kc},'Pre Series') && ...
-                            (contains(data.Key{kc},frapnum) || contains(data.Key{kc},frapnum2)))
-                        CL.dt = str2num(data.Value{kc});
-                        break
+                % get FRAP number from cell name
+                numstr = regexp(CL.Name,'FRAP([0-9]+)','tokens');
+                frapnum = sprintf('FRAP%s',numstr{1}{1});
+                frapnum2 = sprintf('FRAP %s',numstr{1}{1});
+            
+                if (exist([dirname metadatafile],'file'))
+                    data = readtable([dirname metadatafile],'Delimiter',',');
+                    
+                    for kc = 1:size(data,1)
+                        if (contains(data.Key{kc},'mage|ATLConfocalSettingDefinition|CycleTime')...
+                                && ~contains(data.Key{kc},'Pre Series') && ...
+                                (contains(data.Key{kc},frapnum) || contains(data.Key{kc},frapnum2)))
+                            CL.dt = str2num(data.Value{kc});
+                            break
+                        end
                     end
+                else
+                    warning('Failed to load metadata file: %s', [dirname metadatafile])
                 end
             else
-                warning('Failed to load metadata file: %s', [dirname metadatafile])
+                warning('No metadata file supplied')
             end
             
             %% load in one frame to be able to quickly visualize the cell
@@ -324,7 +332,12 @@ classdef CellObjPA < matlab.mixin.Copyable
             opt.nuccent = NaN;
             opt.nucrad = NaN;
             opt.nucbound = NaN;
-            opt.showPA = false
+            opt.showPA = false;
+            opt.showActROI = true;
+            % get the nucleus roi
+            opt.getnuc = true; 
+            % brightness adjustment when showing image
+            opt.adjust = [];
             
             if (exist('options','var'))
                 % copy over passed options
@@ -338,15 +351,18 @@ classdef CellObjPA < matlab.mixin.Copyable
             
             if (opt.showPA)
                 img = imread([CL.DirName,CL.PAfile],CL.NFrame-CL.startPA-1);
-                imshow(img,[]);
+                imshow(img,opt.adjust);
             else
-                imshow(CL.ERimg,[]);
+                imshow(CL.ERimg,opt.adjust);
             end
             title(sprintf('%s: select boundaries', CL.Name),'Interpreter','none')
-            actroi = drawcircle(gca,'Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','y');
-            actroirect = drawrectangle(gca,'Position',CL.actROI.rect,'FaceAlpha',0,'Color','m')
-            if (isempty(CL.actROI.mask))
-                CL.actROI.mask = createMask(actroi);
+            if (opt.showActROI) % show previously selected activated region
+                actroi = drawcircle(gca,'Center',CL.actROI.cent,'Radius',CL.actROI.rad,'Color','y');
+                actroirect = drawrectangle(gca,'Position',CL.actROI.rect,'FaceAlpha',0,'Color','m')
+                
+                if (isempty(CL.actROI.mask))
+                    CL.actROI.mask = createMask(actroi);
+                end
             end
             
             % full cell outline
@@ -360,7 +376,13 @@ classdef CellObjPA < matlab.mixin.Copyable
                 bound = opt.cellcent + opt.cellrad*[cos(thvals) sin(thvals)]
                 ROI = drawpolygon(gca,'Position',bound);
             end
-            CL.fullcellROI = processPolygonROI(ROI);
+            CL.fullcellROI = processPolygonROI(ROI);                        
+            
+            % set rectangle around full cell ROI
+            cellpolyshape = polyshape(CL.fullcellROI.bound(:,1),CL.fullcellROI.bound(:,2));
+            [xlim,ylim] = boundingbox(cellpolyshape);
+            CL.fullcellROI.rect = [xlim(1) ylim(1) xlim(2)-xlim(1) ylim(2)-ylim(1)];
+
             
             % nucleus outline
             if (isnan(opt.nuccent) | isnan(opt.nucrad))
@@ -645,6 +667,88 @@ classdef CellObjPA < matlab.mixin.Copyable
             end
         end
         
+        
+        function [cmap] = getRectROIs(CL,roiwidth,roishift,options)
+            % Cover the cell with rectangular ROIs of a certain width,
+            % shifted by some number of pixels
+            
+            opt = struct();
+            % at least this fraction of the rectangle must be in cell area in
+            % order to keep it
+            opt.minareafrac = 0.8 ;
+            
+            
+            opt.dodisplay = 0;
+            
+            if (exist('options','var'))
+                opt = copyStruct(options,opt);
+            end
+            
+            %% tile cell rectangle with ROIs
+           
+            % number of rois in each dimension
+            cellrect = CL.fullcellROI.rect;
+            nroix = floor((cellrect(3) - roiwidth)/roishift)+1;
+            nroiy = floor((cellrect(4) - roiwidth)/roishift)+1;
+            
+            % estimated number of ROIs
+            estnum = round(nroix*nroiy*sum(CL.fullcellROI.mask(:))/(cellrect(3)*cellrect(4)));
+            cmap = jet(estnum+20);
+            
+            imshow(CL.ERimg,[])
+            if (opt.dodisplay>0)  
+                drawrectangle('Position',cellrect,'Color','w')
+            end
+            
+            ct = 0;
+            keepct = 0;
+            clear allROIs;
+            
+            for yc = 1:nroiy
+                y = cellrect(2)+ (yc-1)*roishift;
+                for xc = 1:nroix
+                    
+                    x = cellrect(1)+ (xc-1)*roishift;
+                    roirect = [x y roiwidth roiwidth];
+                    
+                    ct = ct+1;
+                    roi = drawrectangle('Position',roirect,'InteractionsAllowed','none','Visible','off');
+                    roimask = createMask(roi);
+                    A = sum(roimask(:));
+                    intersection = roimask & CL.fullcellROI.mask;
+                    
+                    if (sum(intersection(:))/sum(roimask(:)) > opt.minareafrac)
+                        keepct = keepct+1;
+                        
+                        if (keepct>estnum)
+                            estnum = estnum+20;
+                            cmap = jet(estnum+20);
+                        end
+                        
+                        roibound = rect2bound(roirect);
+                        cent = [x+roiwidth/2,y+roiwidth/2];
+                        newROI = struct('mask',roimask,'bound',roibound,'cent',cent,'rad',0,...
+                            'whichrad',1,'whichth',yc,'type','rect');
+                        if (keepct==1)
+                            allROIs = [newROI];
+                        else
+                            allROIs(end+1) = newROI;
+                        end
+                        if (opt.dodisplay>0)
+                            roi.Visible = 'on';
+                            roi.Color = cmap(keepct,:);
+                        end
+                    else
+                        roi.delete()
+                    end
+                    
+                end
+            end
+            
+            CL.ROIs = allROIs;
+                        
+        end
+         
         function getRandomROIsRads(CL,cellmaskB,Rvals,regsize,nregperR,options)
             % get random ROIs at specified radiuses around the activation center of the
             % cell
