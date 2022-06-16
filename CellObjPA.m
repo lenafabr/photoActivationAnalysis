@@ -137,12 +137,16 @@ classdef CellObjPA < matlab.mixin.Copyable
             % px per um scale factor
             CL.pxperum = info1.XResolution;
             
-            % data pre-photoactivation
-            if (~exist([dirname CL.PAprefile],'file'))
-                error('Failed to load pre-photoactivated image file: %s', [dirname CL.PAprefile])
+            if (isempty(CL.PAprefile))
+                npreframe = 0;
+            else
+                % data pre-photoactivation
+                if (~exist([dirname CL.PAprefile],'file'))
+                    error('Failed to load pre-photoactivated image file: %s', [dirname CL.PAprefile])
+                end
+                infopre = imfinfo([dirname CL.PAprefile]);
+                npreframe = length(infopre);
             end
-            infopre = imfinfo([dirname CL.PAprefile]);
-            npreframe = length(infopre);
             
             CL.NFrame = npreframe + nPAframe;
             CL.startPA = npreframe+1;
@@ -181,6 +185,9 @@ classdef CellObjPA < matlab.mixin.Copyable
             
             %% load in one frame to be able to quickly visualize the cell
             CL.ERimg = imread([CL.DirName,CL.ERfile],1);
+            
+            % flatten if necessary
+            if (length(size(CL.ERimg))>2); CL.ERimg = mean(CL.ERimg,3); end % flatten
         end
         
         function getActROI(CL,options)
@@ -214,6 +221,7 @@ classdef CellObjPA < matlab.mixin.Copyable
             %%
             if (isnan(opt.imPAreg))
                 imPAreg = imread([CL.DirName CL.PAregfile],2);
+                if (length(size(imPAreg))>2); imPAreg = mean(imPAreg,3); end
             else
                 imPAreg = opt.imPAreg;
             end
@@ -238,7 +246,7 @@ classdef CellObjPA < matlab.mixin.Copyable
                 end
                 
                 %threshold and fill photoactivated region
-                if (opt.threshprctile==NaN)
+                if (isnan(opt.threshprctile))
                     T = graythresh(imPAreg); % use otsu thresholding
                 else
                     % threshold to some percentile                    
@@ -275,7 +283,7 @@ classdef CellObjPA < matlab.mixin.Copyable
                 PAcent(2)-PArect(2), PArect(2)+PArect(4)-PAcent(2)]);
             
             CL.actROI.bound = [PArect(1),PArect(2); PArect(1)+PArect(3),PArect(2); ...
-                PArect(1)+PArect(3), PArect(2)+PArect(4); PArect(1), PArect(2)+PArect(4)];
+                PArect(1)+PArect(3), PArect(2)+PArect(4); PArect(1), PArect(2)+PArect(4)];            
             %%
              if (opt.dodisplay>0)
                 %imshow(imPAbw)
@@ -283,9 +291,11 @@ classdef CellObjPA < matlab.mixin.Copyable
                 hold on
                 rectangle('Position',CL.actROI.rect,'Edgecolor','c','LineWidth',2)
                 plot(PAcent(1),PAcent(2),'c*')
-                actroi = drawcircle('Center',CL.actROI.cent,'Radius', CL.actROI.rad,'Color','y');
-                CL.actROI.mask = createMask(actroi);
+                actroi = drawcircle('Center',CL.actROI.cent,'Radius', CL.actROI.rad,'Color','y');               
                 hold off
+            % else
+             %    actroi = drawcircle('Center',CL.actROI.cent,'Radius', CL.actROI.rad,'Color','y','Visible','off'); 
+             %    CL.actROI.mask = createMask(actroi);
             end
         end
         
@@ -338,6 +348,8 @@ classdef CellObjPA < matlab.mixin.Copyable
             opt.getnuc = true; 
             % brightness adjustment when showing image
             opt.adjust = [];
+            % replot the cell image?
+            opt.plotimage = true;
             
             if (exist('options','var'))
                 % copy over passed options
@@ -349,11 +361,13 @@ classdef CellObjPA < matlab.mixin.Copyable
                 CL.ERimg = imread([CL.DirName,CL.ERfile],1);
             end      
             
-            if (opt.showPA)
-                img = imread([CL.DirName,CL.PAfile],CL.NFrame-CL.startPA-1);
-                imshow(img,opt.adjust);
-            else
-                imshow(CL.ERimg,opt.adjust);
+            if (opt.plotimage) % draw the image for the cell
+                if (opt.showPA)
+                    img = imread([CL.DirName,CL.PAfile],CL.NFrame-CL.startPA-1);
+                    imshow(img,opt.adjust);
+                else
+                    imshow(CL.ERimg,opt.adjust);
+                end
             end
             title(sprintf('%s: select boundaries', CL.Name),'Interpreter','none')
             if (opt.showActROI) % show previously selected activated region
@@ -395,11 +409,13 @@ classdef CellObjPA < matlab.mixin.Copyable
                     ROI = drawpolygon(gca,'Position',opt.nucbound);
                 end
             else
+                warning('off')
                 thvals = linspace(0,2*pi,30)';
                 bound = opt.nuccent + opt.nucrad*[cos(thvals) sin(thvals)];
-                ROI = drawpolygon(gca,'Position',bound);
+                ROI = drawpolygon(gca,'Position',bound);                
             end
-            CL.nucROI = processPolygonROI(ROI);            
+            CL.nucROI = processPolygonROI(ROI);         
+            warning('on')
         end        
         
         function showCellROI(CL,adjust)            
@@ -695,9 +711,9 @@ classdef CellObjPA < matlab.mixin.Copyable
             estnum = round(nroix*nroiy*sum(CL.fullcellROI.mask(:))/(cellrect(3)*cellrect(4)));
             cmap = jet(estnum+20);
             
-            imshow(CL.ERimg,[])
+            imshow(CL.ERimg,[]);
             if (opt.dodisplay>0)  
-                drawrectangle('Position',cellrect,'Color','w')
+                drawrectangle('Position',cellrect,'Color','w');
             end
             
             ct = 0;
@@ -728,7 +744,7 @@ classdef CellObjPA < matlab.mixin.Copyable
                         roibound = rect2bound(roirect);
                         cent = [x+roiwidth/2,y+roiwidth/2];
                         newROI = struct('mask',roimask,'bound',roibound,'cent',cent,'rad',0,...
-                            'whichrad',1,'whichth',yc,'type','rect');
+                            'whichrad',1,'whichth',yc,'type','rect','rect',roirect);
                         if (keepct==1)
                             allROIs = [newROI];
                         else

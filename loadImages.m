@@ -49,6 +49,7 @@ else
     for fc = 1:nimg
         % load one frame at a time
         im = imread(filename,fc);
+        if (length(size(im))>2); im = mean(im,3); end % flatten
         % rescale image values to be btwn 0 and 1
         im = im2double(im);
         preimgs(:,:,fc) = im;
@@ -73,6 +74,7 @@ else
     for fc = 1:nimg
         % load one frame at a time
         im = imread(filename,fc);
+        if (length(size(im))>2); im = mean(im,3); end % flatten
         % rescale image values to be btwn 0 and 1
         im = im2double(im);
         PAimgs(:,:,fc) = im;
