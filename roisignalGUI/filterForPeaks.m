@@ -40,13 +40,16 @@ cmap = jet(length(ROIs));
 clear dervsig allsignal maxpuffheight maxpuffwidth maxpuffderv
 
 warning('off','signal:findpeaks:largeMinPeakHeight')
+
+xvals0= linspace(-5,5,100);
+gauss0 = normpdf(xvals0)*sqrt(2*pi);
 for rc = 1:length(ROIs)
     signal = ROIs(rc).avgsignal(opt.startPA:end);
     nt = length(signal);
     tlist = 1:length(signal);
     
     % smooth signal, for detrending
-    [p,s,mu] = polyfit((1:length(signal))',signal,opt.detrendorder);
+    [p,s,mu] = polyfit((1:length(signal)),signal,opt.detrendorder);
     f_y = polyval(p,(1:numel(signal))',[],mu);
     %f_y = smoothdata(signal,'sgolay',length(signal)/10)';
     
@@ -86,6 +89,23 @@ for rc = 1:length(ROIs)
         ROIs(rc).maxpuffheight = max(signal(goodpuff)/cutoff);
         ROIs(rc).maxpuffderv = max(-dervsig(goodpuff,3)/smcutoff);
         ROIs(rc).maxpuffwidth = max(puffw(goodind));
+        
+        ROIs(rc).puffwidths = puffw(goodind);
+        
+        % get puffintegrals
+        peakinteg = zeros(1,length(goodpuff))
+        for cc = 1:length(goodpuff)            
+            w = puffw(goodind(cc));
+            base = f_y(goodpuff(cc));
+            %gauss = gauss0*(signal(goodpuff(cc))-base) + base;
+            %xvals = xvals0*w/2 + tlist(goodpuff(cc));        
+            %plot(xvals,gauss+shift,'--','Color',cmap(rc,:))
+        
+            % integral of peak            
+            peakinteg(cc) = (signal(goodpuff(cc))-base)*sqrt(2*pi*w/2);
+        end
+        ROIs(rc).puffinteg = peakinteg; 
+        ROIs(rc).basesignal = f_y;
         
         keepreg(end+1) = rc;
     end
