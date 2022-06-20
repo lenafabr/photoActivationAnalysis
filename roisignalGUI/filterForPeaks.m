@@ -93,7 +93,7 @@ for rc = 1:length(ROIs)
         ROIs(rc).puffwidths = puffw(goodind);
         
         % get puffintegrals
-        peakinteg = zeros(1,length(goodpuff))
+        peakinteg = zeros(1,length(goodpuff));
         for cc = 1:length(goodpuff)            
             w = puffw(goodind(cc));
             base = f_y(goodpuff(cc));

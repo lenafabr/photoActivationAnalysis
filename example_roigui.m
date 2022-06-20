@@ -39,34 +39,6 @@ addpath('./roisignalGUI/')
 %% test gui
 app = roiSignalProcess('CL',CL)
 
-%% get integrated peaksignals
+%% get integrated peak signals for all shown ROIs
 allpuffinteg = [app.ROIs.puffinteg]
 
-%% plot gaussian peak overlays to see if width is judged correctly
-figure(app.PlotFigure)
-hold all
-xvals0= linspace(-5,5,100);
-gauss0 = normpdf(xvals0)*sqrt(2*pi);
-
-for rc = 1:length(app.ROIs)
-    puffind = app.ROIs(rc).puffind;
-    signal = app.ROIs(rc).avgsignal;
-    tlist = 1:length(app.ROIs(rc).avgsignal);
-    
-    sigmin = min(signal); sigmax = max(signal);
-    basesignal = app.ROIs(rc).basesignal;
-    
-    for cc= 1:length(puffind)
-        base = app.ROIs(rc).basesignal(puffind(cc));
-        w = app.ROIs(rc).puffwidths(cc);
-        gauss = gauss0*(signal(puffind(cc))-base) + base;
-        xvals = xvals0*w/2 + tlist(puffind(cc));        
-                
-        gaussshift  = (gauss-sigmin)/(sigmax-sigmin)+rc;
-        
-        baseshift = (basesignal-sigmin)/(sigmax-sigmin)+rc;
-        plot(tlist,baseshift,'Color',app.roicmap(rc,:))
-        plot(xvals,gaussshift,'--','Color',app.roicmap(rc,:))
-    end
-end
-hold off
