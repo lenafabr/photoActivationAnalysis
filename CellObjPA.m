@@ -339,6 +339,7 @@ classdef CellObjPA < matlab.mixin.Copyable
             % set cell or nuc as circle with preset center / radius
             opt.cellcent = NaN;
             opt.cellrad = NaN;
+            opt.cellrect= NaN;
             opt.nuccent = NaN;
             opt.nucrad = NaN;
             opt.nucbound = NaN;
@@ -380,15 +381,21 @@ classdef CellObjPA < matlab.mixin.Copyable
             end
             
             % full cell outline
-            if (isnan(opt.cellcent) | isnan(opt.cellrad))
-                disp(sprintf(...
-                    'Click on image to draw polygon outline for full cell. \n Right-click to finish.'))
-                ROI = drawpolygon(gca);
-                input('Drag ROI points to adjust. Hit enter when done adjusting\n')
-            else
+            if (~isnan(opt.cellrect))
+                % set cell boundary to a predefined rectangle
+                bound = rect2bound(opt.cellrect);
+                ROI = drawpolygon(gca,'Position',bound);
+            elseif (~isnan(opt.cellcent) & ~isnan(opt.cellrad))
+                % set cell boundary to a predefined circle
                 thvals = linspace(0,2*pi,30)';
                 bound = opt.cellcent + opt.cellrad*[cos(thvals) sin(thvals)]
                 ROI = drawpolygon(gca,'Position',bound);
+            else
+                % draw manually
+                disp(sprintf(...
+                    'Click on image to draw polygon outline for full cell. \n Right-click to finish.'))
+                ROI = drawpolygon(gca);
+                input('Drag ROI points to adjust. Hit enter when done adjusting\n')          
             end
             CL.fullcellROI = processPolygonROI(ROI);                        
             
