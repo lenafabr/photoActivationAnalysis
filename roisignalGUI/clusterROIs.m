@@ -37,7 +37,8 @@ for rc = 1:length(ROIs)
         end
 %         
         alldist = pdist2(puff',puff2');
-        signaldist(rc,rc2) = min(alldist(:));
+        [signaldist(rc,rc2),minind] = min(alldist(:));
+        
         signaldist(rc2,rc) = signaldist(rc,rc2);
     end
 end
@@ -65,6 +66,7 @@ nbins = max(regbins);
 clear peakregind peakregmask peakregcent
 ct = 0;
 for bc =1:nbins
+    %%
     reg = find(regbins==bc);
     
     regmask = zeros(size(ROIs(1).mask));

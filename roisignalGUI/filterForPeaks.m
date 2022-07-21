@@ -86,8 +86,9 @@ for rc = 1:length(ROIs)
         %hold all
         %text(tlist(end),signal(end)+shift,sprintf('%d',rc),'Color',cmap(rc,:))
         
-        ROIs(rc).maxpuffheight = max(signal(goodpuff)/cutoff);
-        ROIs(rc).maxpuffderv = max(-dervsig(goodpuff,3)/smcutoff);
+        ROIs(rc).puffheights = detrendsignal(goodpuff);
+        ROIs(rc).maxpuffheight = max(ROIs(rc).puffheights);
+        ROIs(rc).maxpuffderv = max(-dervsig(goodpuff,3));
         ROIs(rc).maxpuffwidth = max(puffw(goodind));
         
         ROIs(rc).puffwidths = puffw(goodind);
