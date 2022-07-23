@@ -34,7 +34,7 @@ imshow(CL.imgs(:,:,1),[0,0.3])
 
 
 %%
-addpath('./roisignalGUI/')
+addpath(genpath('./'))
 
 %% test gui
 app = roiSignalProcess('CL',CL)
