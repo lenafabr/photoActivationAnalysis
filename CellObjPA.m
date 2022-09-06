@@ -923,7 +923,7 @@ classdef CellObjPA < matlab.mixin.Copyable
             if (~exist('loadoptions'))
                 loadoptions = struct();
             end
-            
+                       
             % other options, with defaults
             opt = struct();
             % input images rather than loading from file
@@ -936,13 +936,14 @@ classdef CellObjPA < matlab.mixin.Copyable
             if (~exist('loadoptions'))
                 loadoptions = struct();
             end
-            
-            
+           
             % get a second photoactivated signal as well.
             getsignal2 = ~isempty(CL.PA2file); 
             
             % load in all images
             if (isnan(opt.imgs))
+                imgs = loadImages(CL.DirName,CL.PAprefile,CL.PAfile,loadoptions);
+            elseif (isempty(opt.imgs))
                 imgs = loadImages(CL.DirName,CL.PAprefile,CL.PAfile,loadoptions);
             else
                 imgs = opt.imgs;
@@ -956,8 +957,14 @@ classdef CellObjPA < matlab.mixin.Copyable
             end
             
             % put together all region masks
-            allmasks = cat(3,CL.ROIs.mask);
-            
+            if (isempty(CL.ROIs))
+                allmasks = [];
+                regionTraces = zeros(0,size(imgs,3));
+                return
+            else
+                allmasks = cat(3,CL.ROIs.mask);
+            end
+
             % add on activation mask and whole cell mask
             allmasks(:,:,end+1) = CL.actROI.mask;
             % mask for cell region around activation zone; may be undefined

@@ -55,6 +55,9 @@ if (dodisplay)
 end
 %%
 
+peakregcent = [];
+peakregmask = [];
+
 for rc = 1:nreg
     %% specific region mask
     mask = regROIs(rc).mask;
@@ -90,6 +93,7 @@ for rc = 1:nreg
     maskvals = interp2(mask,goodpts(:,1),goodpts(:,2));
     goodpts = goodpts(abs(maskvals-1)<eps,:);
     goodpts = sortrows(goodpts,3,'descend');
+  
     peakcent = goodpts(1,1:2); % save the eak with the biggest mass
 
 
