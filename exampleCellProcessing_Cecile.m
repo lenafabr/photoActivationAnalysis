@@ -7,35 +7,59 @@
 % To process many cells at once more efficiently, use
 % exampleManyCellProcessing.m
 
+
 %% establish input/output file names
-cellname = 'COS7_WT_FRAP001'; % short name associated with his movie or cell
+cellname = 'Cecile_WT_FRAP001'; % short name associated with his movie or cell
 
 % directory where raw images are stored
-dirname = '/data/proj/ERtransport/210423_COS7_ER-PAGFP_RTN4KO/WT/';
+dirname = '/data/proj/ERtransport/ER_paGFP_Cecile/ER_paGFP_Cecile/COS7-WT-paGFP-KDEL-ERmCherry-040822/FRAP 001/';
 
-% where to save .mat file with this cell object
+% where to save the final .mat file with this cell object
 savefile = sprintf('../celldata/example_%s.mat',cellname);
 
 % get file names for images to load in:
 % 1) photoactivated channel, prior to photoactivation
-prefile = '210423_COS7_ER_PAGFP_ER_mCherry_WT_FRAP_004_FRAP_Pre_Series10_C2.tif';
-% 2) photoactivated channel, during photoactivation
-PAfile = '210423_COS7_ER_PAGFP_ER_mCherry_WT_FRAP_004_FRAP_Bleach_Series12_C2.tif';
+prefile = 'FRAP 001_FRAP Pre Series01_ch02.tif';
+% 2) photoactivated signal channel, during photoactivation
+PAfile = 'FRAP 001_FRAP Bleach Series03_ch02.tif';
 % 3) photoactivated region only, during photoactivation
-PAregfile = '210423_COS7_ER_PAGFP_ER_mCherry_WT_FRAP_004_FRAP_Bleach_Series12_C0.tif';
+PAregfile = 'FRAP 001_FRAP Bleach Series03_ch00.tif';
 % 4) general ER luminal marker, during photoactivation
-ERfile = '210423_COS7_ER_PAGFP_ER_mCherry_WT_FRAP_004_FRAP_Bleach_Series12_C3.tif';
+ERfile = 'FRAP 001_FRAP Bleach Series03_ch03.tif';
 % 5) metadatafile exported from ImageJ (used to get frame rate)
-metafile='Metadata_210423_COS7_ER-PAGFP_ER-mCherry_WT.csv';
+% (Note: Lena exports this from ImageJ when reading in .lif files
+% it should be possible to parse the frame rate out of the .xml metadata 
+% files as well);
+% currently ignore
+metafile='';
 
 %% create a cell object and load data into it
 % Note: this does NOT load the actual raw image files (except for one frame
 % saved as CL.ERimg saved for quick visualization
-CL = CellObjPA(cellname);    
-CL.loadCellData(dirname,PAfile,prefile,PAregfile,ERfile,metafile);
+CL = CellObjPA(cellname);
+if (isempty(metafile))
+    CL.loadCellData(dirname,PAfile,prefile,PAregfile,ERfile);
+else
+    CL.loadCellData(dirname,PAfile,prefile,PAregfile,ERfile,metafile);
+end
 
+% FOR CECILE'S DATA only: 
+% blank out the scale bar as it makes everything else difficult to see
+[CL.ERimg,sclbarmask] = removeBrightestRegion(CL.ERimg);
 imshow(CL.ERimg,[])
 title(sprintf('%s',CL.Name),'Interpreter','none')
+
+
+%% Conversion factors to real length and time units
+% Ought to get this from metadata, but for now 
+% SET THIS MANUALLY:
+sclbarlen = 10; % what is the scale bar length in um? 
+CL.dt = 1; % seconds per frame
+
+% get the px per um from the scalebar
+barstats = regionprops(sclbarmask);
+% WARNING: this might be off by 1 pixel depending on how the bar was drawn
+CL.pxperum = barstats.BoundingBox(3)/sclbarlen;
 
 %% manually identify rectangular activation region
 CL.getActROI(struct('dodisplay',1,'manualrect',1));
@@ -63,6 +87,7 @@ CL.showCellROI(true);
 save(savefile,'CL')
 
 %% establish wedge ROIs for tracking signal at different distances from photoactivation center
+% this step can be a somewhat slow
 
 dR = 1; % radius separations (in um)
 Rwidth = 2; % thickness of rings (in um);
@@ -94,7 +119,7 @@ optionsROIs.getRingROIs = true;
 [Rvals,whichrad] = CL.getWedgeROIs(maxR,dR,Rwidth,optionsROIs);
 
 
-%% get traces over each region
+%% get time-traces over each region
 % get non-photoactivated luminal marker traces?
 getnonPATrace = false;
 % imgs saves all raw images
@@ -104,11 +129,11 @@ getnonPATrace = false;
  
 
 %% Plot example ROIs and traces to make sure everything makes sense
-
+% This is just for visualization
 % angle (in degrees, btwn -180 and 180) around the circle, indicating roughly
 % which wedge to show for each ring
 % 0 degrees points east. Angle increases clockwise.
-pickangle = -90; 
+pickangle = -20; 
 
 CL.plotExampleWedgeROIs(pickangle)
 

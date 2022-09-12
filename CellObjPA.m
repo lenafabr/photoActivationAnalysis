@@ -226,6 +226,10 @@ classdef CellObjPA < matlab.mixin.Copyable
                 imPAreg = opt.imPAreg;
             end
             
+            if (size(imPAreg,3)>1) % convert to grayscale
+                imPAreg = rgb2gray(imPAreg);
+            end
+            
             % Identify centroid and size of photoactivated region
             if (opt.manualrect)
                 imshow(imPAreg,[])
@@ -240,7 +244,7 @@ classdef CellObjPA < matlab.mixin.Copyable
                 T = graythresh(imPAregmask);
                 imPAbw = imbinarize(imPAregmask,T);
             else % identify activated region automatically
-                % median filter
+                %% median filter
                 if (~isnan(opt.medfilter))
                     imPAreg = medfilt2(imPAreg,[opt.medfilter,opt.medfilter]);
                 end
