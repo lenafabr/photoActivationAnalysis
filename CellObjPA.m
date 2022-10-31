@@ -1108,10 +1108,15 @@ classdef CellObjPA < matlab.mixin.Copyable
             % 2exp = double exponential
             opt.fittype = '1exp';
             
+            % if positive, remove regions that max out more than
+            % some factor above the max of the activated region
+            opt.rmAboveAct = 0;
+            
             % solve for time when fitting function reaches this frac of
             % maxium
             opt.cutfrac = 0.5;
-            
+            % look for time to reach fraction of active region max signal?
+            opt.cutfracAct = false;
             
             % minimal ratio of end to start signal to try fitting
             opt.minsignalchange = 0;
@@ -1198,6 +1203,10 @@ classdef CellObjPA < matlab.mixin.Copyable
             else
                 allcfit = inf*ones(length(CL.ROIs),5);
             end
+            
+            % smoothed and max signal in activated region
+            actsmooth = smooth(CL.actROI.avgsignal,opt.actsmooth);                    
+            actmax = max(actsmooth);
             
             for rc = 1:length(CL.ROIs)
                 ROI = CL.ROIs(rc);
@@ -1343,9 +1352,44 @@ classdef CellObjPA < matlab.mixin.Copyable
                 
                 allcfit(rc,1:length(cfit)) = cfit;                   
                 
+                if (strcmp(opt.fittype,'1exp')); yshift=0; end
+                
                 if (strcmp(opt.fittype,'1exp') || strcmp(opt.fittype,'1expnoshift') || strcmp(opt.fittype,'1exptimeshift'))                    
-                    halftimes(rc) = -log(1-opt.cutfrac)*cfit(2);  
+                    if (opt.cutfracAct)                        
+                        halftimes(rc) = -log(1-opt.cutfrac*(actmax-yshift)/cfit(1))*cfit(2);  
+                    else
+                        halftimes(rc) = -log(1-opt.cutfrac)*cfit(2);  
+                    end
+                    if (~isreal(halftimes(rc))); halftimes(rc) = NaN; end
+                    CL.ROIs(rc).halftime = halftimes(rc);
+                    
+                    if (opt.rmAboveAct>0)
+                        % remove regions that max out much higher than
+                        % activation region                       
+                        
+                        if (strcmp(opt.fittype,'1exp'))
+                            fitmax = cfit(1)+cfit(3);
+                        else
+                            fitmax = cfit(1);
+                        end
+                        if (fitmax>actmax*opt.rmAboveAct)
+                            halftimes(rc) = NaN;
+                        end
+                    end
+                    if (opt.cutfracAct)
+                        % half-time to reach a certain fraction of the max
+                        % signal in the activated region
+                        
+                    end
                 elseif (strcmp(opt.fittype,'2expfixlim') )     
+                    
+                    regsmooth = smooth(CL.ROIs(rc).avgsignal,opt.actsmooth);                    
+                    regmax = max(regsmooth);
+                    if (opt.rmAboveAct>0 & regmax>endvals*opt.rmAboveAct)
+                        CL.ROIs(rc).halftime= NaN;
+                         halftimes(rc) = NaN;
+                         continue
+                    end
                     
                     % do not use this wedge if signal starts more than
                     % partway up the activated region signal scale
@@ -1495,12 +1539,13 @@ classdef CellObjPA < matlab.mixin.Copyable
             %disp('foo')
         end
         
-        function plotExampleWedgeROIs(CL,pickangle,options)
+        function showind = plotExampleWedgeROIs(CL,pickangle,options)
             % plot example wedge ROIs at different radii
             % all lying approximately along the desired angle
             % pickangle = degrees, between -180 and 180 around the
             % photoactivation center
             % 0 degrees corresponds to East, angle increases clockwise
+            % showind = indeces of ROIs that are shown
                     
             opt = struct();
             opt.showrad = NaN;
@@ -1530,6 +1575,7 @@ classdef CellObjPA < matlab.mixin.Copyable
             
             cmat = parula(max(whichrad));
             maxval = 0;
+            showind = [];
             for rc  = opt.showrad
                 if (rc>max(whichrad)); continue; end
                 
@@ -1537,6 +1583,7 @@ classdef CellObjPA < matlab.mixin.Copyable
                 if (isempty(wedgeind)); continue; end
                 [~,wcc] = min(abs(angs(wedgeind)-pickangle*pi/180));
                 wc = wedgeind(wcc);
+                showind(end+1) = wc;
                 roi = CL.ROIs(wc);
                 
                 subplot(1,2,1)
@@ -1553,6 +1600,12 @@ classdef CellObjPA < matlab.mixin.Copyable
                     tfit = tvals(CL.startPA:end);
                     fitvals = roi.fitfunc(roi.cfit,tfit);
                     plot(tfit,fitvals,'--','Color',cmat(rc,:),'LineWidth',1.5)
+                    end
+                    
+                    if (~isnan(roi.halftime) & ~isinf(roi.halftime))
+                        ht = roi.halftime;
+                        maxval = max(CL.actROI.avgsignal);
+                        plot([ht,ht]+CL.startPA*CL.dt, [0,maxval], ':','Color',cmat(rc,:), 'LineWidth',1.5)
                     end
                 end
             end
