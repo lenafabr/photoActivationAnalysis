@@ -37,8 +37,11 @@ for rc = 1:length(ROIs)
         end
 %         
         alldist = pdist2(puff',puff2');
-        [signaldist(rc,rc2),minind] = min(alldist(:));
-        
+        if (isempty(alldist))
+            signaldist(rc,rc2)= inf; minind = 0;
+        else
+            [signaldist(rc,rc2),minind] = min(alldist(:));
+        end
         signaldist(rc2,rc) = signaldist(rc,rc2);
     end
 end
