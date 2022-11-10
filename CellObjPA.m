@@ -1044,18 +1044,29 @@ classdef CellObjPA < matlab.mixin.Copyable
             hold off
             title(sprintf('%s',CL.Name),'Interpreter','none')
             
+            
+            % plot fitted function if available
+            plotfield = isfield(CL.ROIs,'cfit');
+            PAind = CL.startPA:CL.NFrame;
             if (isfield(CL.ROIs,'avgsignal'))
                 % plot avg signal if available
+                
+                
                 subplot(1,2,2)
                 tvals = (1:CL.NFrame)*CL.dt;
                 for rc = 1:length(ind)
+                    roi = CL.ROIs(ind(rc));
                     signal = CL.ROIs(ind(rc)).avgsignal;
                     plot(tvals,signal,'Color',cmat(rc,:))
                     hold all
+                    
+                    if (plotfield)                            
+                        plot(tvals(PAind),roi.fitfunc(roi.cfit,tvals(PAind)),'--','Color',cmat(rc,:))
+                    end
                 end
                 hold off
                 xlabel('time (s)')
-                ylabel('signal')
+                ylabel('signal')            
             end
         end
         

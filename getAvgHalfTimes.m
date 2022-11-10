@@ -1,4 +1,4 @@
-function [avghalftime,allhalftimes,allcellind,avghalftimecells] = getAvgHalfTimes(allcells,options)
+function [avghalftime,allhalftimes,allcellind,avghalftimecells,allwedgeind] = getAvgHalfTimes(allcells,options)
 % for a list of cells, calculate average half-time among all regions at a
 % given radius
 % Rvals lists the radii
@@ -39,7 +39,8 @@ opt
 
 allhalftimes = {};
 allcellind = {};
-
+allwedgeind = {};
+%%
 for cc = 1:length(allcells)
     CL = allcells(cc);
     disp(CL.Name)
@@ -52,6 +53,7 @@ for cc = 1:length(allcells)
         for rc = (length(allhalftimes)+1):nring
             allhalftimes{rc} = [];
             allcellind{rc} = [];
+            allwedgeind{rc} = [];
         end
     end
     
@@ -62,11 +64,12 @@ for cc = 1:length(allcells)
     tfit = tvals(CL.startPA+1:end);
     for rc = 1:nring
         % wedges for this ring index
-        % keep only those where half-time is < 2 * movie length
+        % keep only those where half-time is < maxtscl * movie length
         wedgeind = find(~isring & whichring == rc & halftimes < max(tvals)*opt.maxtscl);
         
         allhalftimes{rc} = [allhalftimes{rc} halftimes(wedgeind)];
         allcellind{rc} = [allcellind{rc} cc*ones(1,length(wedgeind))];
+        allwedgeind{rc} =  [allwedgeind{rc} wedgeind];
         
         if (opt.dodisplay & ~isempty(wedgeind))
             % plot fit for 1 wedge from each radius
