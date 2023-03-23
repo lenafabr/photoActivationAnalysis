@@ -1151,7 +1151,17 @@ classdef CellObjPA < matlab.mixin.Copyable
             opt.initsignalavg=NaN;
             
             % window span for smoothing activated region to get max val
-            opt.actsmooth = 10; 
+            opt.winsmooth = 10; 
+            
+            % use max of all smoothed region signals as the fitting
+            % function limit? Otherwise, for 2expfixlim use photoactivation
+            % region
+            opt.maxreglim = 0;
+            % only include wedges at specific radii; by default include all
+            % in calculating the maximum
+            opt.maxreglimrads = [];
+            opt.maxregring = 0;
+            
             % do not use signal if it starts more than partway up
             % between initial and max values of activated region
             % turned off by default
@@ -1160,6 +1170,8 @@ classdef CellObjPA < matlab.mixin.Copyable
             % check for too high a fano factor at the end
             opt.maxendfano=-1;
             opt.endframes=20;
+            % calculate fano factor relative to yshift?
+            opt.fanoyshift = false;
             
             if (exist('options','var'))
                 opt = copyStruct(options,opt);
@@ -1216,10 +1228,44 @@ classdef CellObjPA < matlab.mixin.Copyable
             end
             
             % smoothed and max signal in activated region
-            actsmooth = smooth(CL.actROI.avgsignal,opt.actsmooth);                    
+            actsmooth = smooth(CL.actROI.avgsignal,opt.winsmooth);                    
             actmax = max(actsmooth);
             
+            % get smoothed and max signal in all regions
+            if (opt.rmAboveAct>0 | opt.maxreglim) 
+                % smooth each region and get a maximum
+                regsmooth = cell(1,length(CL.ROIs));
+                for rc = 1:length(CL.ROIs)
+                    regsmooth{rc} = smooth(CL.ROIs(rc).avgsignal,opt.winsmooth);                                              
+                    regmax(rc) = max(regsmooth{rc});
+                end
+            end
+            
+            if (opt.maxreglim)
+                % find max among all regions to use for fitting
+                whichrad = [CL.ROIs.whichrad];
+                roitype = {CL.ROIs.type};
+                iswedge = cellfun(@(x) strcmp(x,'wedge'),roitype);
+                if (isempty(opt.maxreglimrads))
+                    ind = find(iswedge);
+                else
+                    ind = find(ismember(whichrad,opt.maxreglimrads) & iswedge);
+                end
+                
+                allregmax = max(regmax(ind));
+                
+                if (opt.maxregring)            
+                    % set maximum to max smoothed ring signal
+                    isring = cellfun(@(x) strcmp(x,'ring'),roitype);
+                    ind = find(isring);
+                    allregmax = max(regmax(ind));
+                end
+            end
+            
+          
+            
             for rc = 1:length(CL.ROIs)
+                %%
                 ROI = CL.ROIs(rc);
 
                 if (strcmp(ROI.type,'wedge') && ~opt.dowedge)
@@ -1242,7 +1288,7 @@ classdef CellObjPA < matlab.mixin.Copyable
                 % calculate z score of end signal average vs
                 % pre-photoactivation average
                 premean = mean(signal(1:CL.startPA+1));
-                prestd = std(signal(1:CL.startPA+1))/sqrt(CL.startPA);
+                prestd = std(signal(1:CL.startPA+1));%/sqrt(CL.startPA);
                 endmean = mean(signal(end-opt.endsignalavg:end));
                 zscore = (endmean-premean)/prestd;
                 
@@ -1275,10 +1321,15 @@ classdef CellObjPA < matlab.mixin.Copyable
                     %endvals = prctile(CL.actROI.avgsignal,90);
                     %endvals = max(CL.actROI.avgsignal);
                     
-                    actsmooth = smooth(CL.actROI.avgsignal,opt.actsmooth);
-                    %if (strcmp(opt.fittype,'2expfixlimbleach') | strcmp(opt.fittype,'1expbleach'))
                     % get max of smoothed signal in activated region                    
-                    endvals = max(actsmooth);
+                    if (opt.maxreglim)
+                        % set limit to maximum of all smoothed region
+                        % signals
+                        endvals = allregmax;
+                    else
+                        % set limit to maximum of activation region
+                        endvals = max(actsmooth);
+                    end
                     if (CL.startPA<=1)
                         actyshift = actsmooth(1);
                     else                        
@@ -1298,8 +1349,14 @@ classdef CellObjPA < matlab.mixin.Copyable
                 
                 % check for too much error at the end
                 if (opt.maxendfano>0)
-                    meanend = mean(signal(end-opt.endframes:end));
-                    stdend = std(signal(end-opt.endframes:end));
+                    if (opt.fanoyshift) 
+                        fanosignal = signal(end-opt.endframes:end)-yshift;
+                    else
+                        fanosignal = signal(end-opt.endframes:end);
+                    end
+                    meanend = mean(fanosignal);
+                    stdend = std(fanosignal);
+                        
                     
                     if (stdend/meanend>opt.maxendfano)
                         % too noisy
@@ -1392,11 +1449,8 @@ classdef CellObjPA < matlab.mixin.Copyable
                         % signal in the activated region
                         
                     end
-                elseif (strcmp(opt.fittype,'2expfixlim') )     
-                    
-                    regsmooth = smooth(CL.ROIs(rc).avgsignal,opt.actsmooth);                    
-                    regmax = max(regsmooth);
-                    if (opt.rmAboveAct>0 & regmax>endvals*opt.rmAboveAct)
+                elseif (strcmp(opt.fittype,'2expfixlim') )                                                                 
+                    if (opt.rmAboveAct>0 & regmax(rc)>endvals*opt.rmAboveAct)
                         CL.ROIs(rc).halftime= NaN;
                          halftimes(rc) = NaN;
                          continue
@@ -1559,6 +1613,7 @@ classdef CellObjPA < matlab.mixin.Copyable
             % showind = indeces of ROIs that are shown
                     
             opt = struct();
+            opt.roilist = [];
             opt.showrad = NaN;
             
             if (exist('options','var'))
@@ -1587,17 +1642,27 @@ classdef CellObjPA < matlab.mixin.Copyable
             cmat = parula(max(whichrad));
             maxval = 0;
             showind = [];
-            for rc  = opt.showrad
-                if (rc>max(whichrad)); continue; end
+            if (isempty(opt.roilist)) % plot wedges along a given angle
                 
-                wedgeind = find(iswedge & whichrad==rc);
-                if (isempty(wedgeind)); continue; end
-                [~,wcc] = min(abs(angs(wedgeind)-pickangle*pi/180));
-                wc = wedgeind(wcc);
-                showind(end+1) = wc;
+                for rc  = opt.showrad
+                    if (rc>max(whichrad)); continue; end
+                    
+                    wedgeind = find(iswedge & whichrad==rc);
+                    if (isempty(wedgeind)); continue; end
+                    [~,wcc] = min(abs(angs(wedgeind)-pickangle*pi/180));
+                    wc = wedgeind(wcc);
+                    showind(end+1) = wc;
+                end
+            else % plot listed wedges
+                showind = opt.roilist;
+            end
+            
+            for wcc= 1:length(showind)
+                wc = showind(wcc);
                 roi = CL.ROIs(wc);
+                rc = whichrad(wc);
                 
-                subplot(1,2,1)
+                subplot(1,2,1)                
                 drawpolygon('Position',roi.bound,'Color',cmat(rc,:),'InteractionsAllowed','none','FaceAlpha',0);
                 
                 subplot(1,2,2)                
