@@ -1129,8 +1129,10 @@ classdef CellObjPA < matlab.mixin.Copyable
             % look for time to reach fraction of active region max signal?
             opt.cutfracAct = false;
             
-            % minimal ratio of end to start signal to try fitting
+            % minimal z-score for end vs start signal to try fitting
             opt.minsignalchange = 0;
+            % include both pre-PA and end time std in the zscore cutoff
+            opt.use2std = false;
             
             % which signal to use 
             % 1 = avgsignal
@@ -1290,7 +1292,13 @@ classdef CellObjPA < matlab.mixin.Copyable
                 premean = mean(signal(1:CL.startPA+1));
                 prestd = std(signal(1:CL.startPA+1));%/sqrt(CL.startPA);
                 endmean = mean(signal(end-opt.endsignalavg:end));
-                zscore = (endmean-premean)/prestd;
+                endstd = std(signal(end-opt.endsignalavg:end));
+                if (opt.use2std)
+                    totstd = sqrt(prestd.^2 + endstd.^2);
+                    zscore = (endmean-premean)/totstd;
+                else
+                    zscore = (endmean-premean)/prestd;
+                end
                 
                 if (nnz(~isnan(signal(CL.startPA+1:end))) < 10) % not enough datapoints
                      halftimes(rc) = inf;                   
