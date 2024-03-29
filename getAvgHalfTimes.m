@@ -1,4 +1,4 @@
-function [avghalftime,allhalftimes,allcellind,avghalftimecells,allwedgeind] = getAvgHalfTimes(allcells,options)
+function [avghalftime,allhalftimes,allcellind,avghalftimecells,allwedgeind,plotwedges] = getAvgHalfTimes(allcells,options)
 % for a list of cells, calculate average half-time among all regions at a
 % given radius
 % Rvals lists the radii
@@ -62,6 +62,7 @@ for cc = 1:length(allcells)
     %%
     cmat = jet(nring);
     tfit = tvals(CL.startPA+1:end);
+    plotwedges = [];
     for rc = 1:nring
         % wedges for this ring index
         % keep only those where half-time is < maxtscl * movie length
@@ -80,6 +81,8 @@ for cc = 1:length(allcells)
             end
             hold all
             plot(tfit,fitfunc(allcfit(wedgeind(1),:),tfit),'--','Color',cmat(rc,:))
+
+            plotwedges(rc) = wedgeind(1);
         end
         
         % get avg halftimes for this cell only

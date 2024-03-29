@@ -1,6 +1,6 @@
 % general directory name
-upperdirname = '/media/ekoslover/PortableDrive2/pc1/.snapshots/snapshot.0/data/proj/ERtransport/calcium_release/';
-%gendirname = '/data/proj/ERtransport/calcium_release/COS7-WT-GCaMP3-cIP3-Flash-210422/';
+%upperdirname = '/media/ekoslover/PortableDrive2/pc1/.snapshots/snapshot.0/data/proj/ERtransport/calcium_release/';
+upperdirname = '/data/proj/ERtransport/calcium_release/';
 gendirname = [upperdirname 'COS7-WT-GCaMP3-cIP3-Flash-210422/'];
 
 % cell name
@@ -34,7 +34,7 @@ imshow(CL.imgs(:,:,1),[0,0.3])
 
 
 %%
-addpath(genpath('./'))
+addpath(genpath('../'))
 
 %% test gui
 app = roiSignalProcess('CL',CL)

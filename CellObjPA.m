@@ -242,7 +242,7 @@ classdef CellObjPA < matlab.mixin.Copyable
                 imPAregmask(~mask(:)) = 0;
                 %threshold and fill photoactivated region
                 T = graythresh(imPAregmask);
-                imPAbw = imbinarize(imPAregmask,T);
+                imPAbw = imbinarize(imPAregmask,T);            
             else % identify activated region automatically
                 %% median filter
                 if (~isnan(opt.medfilter))
@@ -539,7 +539,10 @@ classdef CellObjPA < matlab.mixin.Copyable
             end
             if (opt.erodemask > 0)
                 SE = strel('disk',ceil(opt.erodemask*CL.pxperum),8);
-                nonucmask = imerode(nonucmask,SE);
+                % pad with zeros to avoid erosion edge effects
+                padded = padarray(nonucmask,[1,1]);
+                nonucmask = imerode(padded,SE);
+                nonucmask = nonucmask(2:end-1,2:end-1);
             end
             
             % activation radius in um
@@ -1398,7 +1401,8 @@ classdef CellObjPA < matlab.mixin.Copyable
                 elseif (strcmp(opt.fittype,'2expfixlim'))
                      cguess = [0.5 10 0.5 50];       
                      lb = [0 0 0 0]; ub = [1 inf 1 inf];
-                     fitfunc = @(c,t) (endvals - actyshift-yshift)*fitfunc0(c,t) + yshift;   
+                     %fitfunc = @(c,t) (endvals - actyshift-yshift)*fitfunc0(c,t) + yshift;   
+                     fitfunc = @(c,t) (endvals - actyshift)*fitfunc0(c,t) + yshift;   
                 elseif (strcmp(opt.fittype,'2expfixlimbleach'))
                     
                     cguess = [0.5 1 2 30];

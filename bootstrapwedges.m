@@ -1,8 +1,18 @@
-function [medhalftime,stehalftime] = bootstrapwedges(allcells,Rvals,allcellind,allhalftimes,bootstrapcells,whichcells)
+function [medhalftime,stehalftime] = bootstrapwedges(allcells,Rvals,allcellind,allhalftimes,options)
 
-if (~exist('bootstrapcells'))
-    % bootstrap at the individual cell level
-    bootstrapcells = 1;
+% default parameters
+opt = struct();
+% bootstrap at the individual cell level
+opt.bootstrapcells = 1;
+
+% ignore R values that come from less than some min number of cells
+opt.mincells = 2;
+
+% which specific cells to use in analysis, if not provided, use all
+opt.whichcells = NaN;
+
+if (exist('options','var'))
+    opt = copyStruct(options,opt);
 end
 
 % if (exist('whichcells'))
@@ -34,7 +44,7 @@ for rc = 1:length(Rvals)
     else
         cellind = allcellind{rc};
         % ignore datapoints coming from only one cell
-        if (length(unique(cellind))<2)
+        if (length(unique(cellind))<opt.mincells)
             medhalftime(rc) = NaN;
             stdhalftime(rc) = NaN;
             continue
@@ -46,11 +56,10 @@ for rc = 1:length(Rvals)
     
     %% bootstrapping            
     for bc = 1:nboot    
-        
-        if (bootstrapcells) % bootstrap whole cells            
-            if (exist('whichcells','var'))
+        if (opt.bootstrapcells) % bootstrap whole cells        
+            if (~isnan(opt.whichcells))
                 % only use data from specific cells
-                keepcells = allcells(whichcells);
+                keepcells = allcells(opt.whichcells);
             else
                 keepcells = allcells;
             end            
@@ -61,7 +70,7 @@ for rc = 1:length(Rvals)
                 alltimes = [alltimes halftimes(cellind==cellsamp(cc))];
             end
         else % bootstrap individual wedges
-            if (exist('whichcells','var'))
+            if (~isnan(opt.whichcells))
                 % only use data from specific cells
                 keeptimes = halftimes(ismember(cellind,whichcells));
             else
